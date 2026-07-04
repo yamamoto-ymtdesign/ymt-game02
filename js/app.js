@@ -12,7 +12,8 @@ const app = {
   setups: [newSetup(), newSetup()],   // セットアップ画面の選択状態
   strategies: [null, null],           // 読み込み済み戦略
   match: null,
-  timer: null,
+  pitch: null,
+  loopGen: 0,
   speed: 1,
   htDone: [false, false],
 };
@@ -209,12 +210,14 @@ function initLoadScreen() {
 function startMatch() {
   const seedInput = $("#seed-input").value.trim();
   const seed = seedInput ? (parseInt(seedInput, 10) >>> 0) : (Math.random() * 4294967296) >>> 0;
+  if (app.pitch) app.pitch.stop();
   app.match = new Match(app.strategies[0], app.strategies[1], seed);
   app.htDone = [false, false];
   showScreen("#screen-match");
   $("#log").innerHTML = "";
   $("#ht-panel").classList.add("hidden");
   $("#result-panel").classList.add("hidden");
+  app.pitch = new Pitch($("#pitch"), app.match);
   const m = app.match;
   addLog({ kind: "section", minute: "", text: `⚽ キックオフ！ ${m.a.team.name}（${m.a.strategy.manager}監督） vs ${m.b.team.name}（${m.b.strategy.manager}監督）` });
   const notes = [];
@@ -226,20 +229,29 @@ function startMatch() {
   }
   if (notes.length) addLog({ kind: "info", minute: "", text: `本日のコンディション速報 — ${notes.join(" ／ ")}` });
   updateScoreboard();
-  runTicks();
+  startLoop();
 }
 
-function runTicks() {
-  clearInterval(app.timer);
-  app.timer = setInterval(() => {
-    const m = app.match;
-    const before = m.events.length;
-    m.step();
-    for (let i = before; i < m.events.length; i++) addLog(m.events[i]);
-    updateScoreboard();
-    if (m.atHalftime) { clearInterval(app.timer); showHalftime(); }
-    if (m.finished) { clearInterval(app.timer); showResult(); }
-  }, 1400 / app.speed);
+// アニメーションと同期したティックループ。app.loopGen で多重起動・中断を管理する
+function startLoop() {
+  const gen = ++app.loopGen;
+  loopStep(gen);
+}
+
+async function loopStep(gen) {
+  if (gen !== app.loopGen) return;
+  const m = app.match;
+  if (m.finished || m.atHalftime) return;
+  const before = m.events.length;
+  m.step();
+  for (let i = before; i < m.events.length; i++) addLog(m.events[i]);
+  updateScoreboard();
+  const dur = Math.max(150, 1400 / app.speed);
+  await app.pitch.animateTick(m.tickAnim, dur);
+  if (gen !== app.loopGen) return;
+  if (m.atHalftime) { showHalftime(); return; }
+  if (m.finished) { showResult(); return; }
+  loopStep(gen);
 }
 
 function updateScoreboard() {
@@ -379,17 +391,18 @@ document.addEventListener("DOMContentLoaded", () => {
     app.match.startSecondHalf();
     const evs = app.match.events;
     addLog(evs[evs.length - 1]);
-    runTicks();
+    startLoop();
   });
   document.querySelectorAll("[data-speed]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      app.speed = Number(btn.dataset.speed);
+      app.speed = Number(btn.dataset.speed);   // ループが毎ティック参照するので再起動不要
       document.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      if (app.match && !app.match.finished && !app.match.atHalftime) runTicks();
     });
   });
   $("#new-match").addEventListener("click", () => {
+    app.loopGen++;                              // 走行中のループを止める
+    if (app.pitch) { app.pitch.stop(); app.pitch = null; }
     app.strategies = [null, null];
     $("#start-match").disabled = true;
     $("#file-0").value = "";

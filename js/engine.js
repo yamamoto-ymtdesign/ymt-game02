@@ -234,19 +234,29 @@ class Match {
 
     // 2. チャンス生成判定
     const cp = this.chanceProb(atkSide, defSide, av, dv, at, dt);
+    const seq = [];
     let goal = false;
     if (this.rng() < cp) {
-      goal = this.resolveChance(atkSide, defSide, av, dv, at, dt);
-    } else if (this.rng() < 0.18) {
-      this.flavor(atkSide, defSide, at);
+      const r = this.resolveChance(atkSide, defSide, av, dv, at, dt);
+      goal = r.goal;
+      seq.push({ side: this.idx(atkSide), phase: r.outcome, shooter: r.shooter, assister: r.assister });
+    } else {
+      if (this.rng() < 0.18) this.flavor(atkSide, defSide, at);
+      seq.push({ side: this.idx(atkSide), phase: "possession" });
     }
 
     // 2b. 速攻判定: カウンター/ロングボールのチームは、相手の攻撃を凌いだ流れから
     //     ボール保持に関係なく速攻チャンスを得られる（通常の40%の確率）
     if (!goal && (dt.attack === "カウンター" || dt.attack === "ロングボール")) {
       const cp2 = this.chanceProb(defSide, atkSide, dv, av, dt, at) * 0.4;
-      if (this.rng() < cp2) this.resolveChance(defSide, atkSide, dv, av, dt, at);
+      if (this.rng() < cp2) {
+        const r2 = this.resolveChance(defSide, atkSide, dv, av, dt, at);
+        if (r2.goal) goal = true;
+        seq.push({ side: this.idx(defSide), phase: r2.outcome, shooter: r2.shooter, assister: r2.assister });
+      }
     }
+    // アニメーション用: このティックで何が起きたか
+    this.tickAnim = { seq, goal: seq.some((e) => e.phase === "goal") };
 
     // 疲労蓄積
     for (const ts of this.teams()) {
@@ -300,7 +310,7 @@ class Match {
     return Math.max(0.05, Math.min(0.45, cp));
   }
 
-  // 決定機を解決する。ゴールなら true
+  // 決定機を解決する。{goal, outcome, shooter, assister} を返す
   resolveChance(atk, def, av, dv, at, dt) {
     atk.stats.chances++;
     atk.stats.shots++;
@@ -338,15 +348,15 @@ class Match {
       if (dfs.length) this.weightedPick(dfs, () => 1).rating -= 0.3;
       this.log(`${buildup}`, "play");
       this.log(`⚽ ゴーーール！！ ${atk.team.name}、${shooter.name}が決めた！ ${this.scoreStr()}`, "goal");
-      return true;
+      return { goal: true, outcome: "goal", shooter: shooter.name, assister: assister.name };
     }
     const r = this.rng();
-    let endText;
-    if (r < 0.45 && gk) { endText = `シュート！ …GK${gk.name}がセーブ！`; gk.rating += 0.4; }
-    else if (r < 0.6) endText = `シュートは無情にもポスト直撃！`;
-    else endText = `シュート！ …わずかに枠の外！`;
+    let endText, outcome;
+    if (r < 0.45 && gk) { endText = `シュート！ …GK${gk.name}がセーブ！`; gk.rating += 0.4; outcome = "save"; }
+    else if (r < 0.6) { endText = `シュートは無情にもポスト直撃！`; outcome = "post"; }
+    else { endText = `シュート！ …わずかに枠の外！`; outcome = "miss"; }
     this.log(`${atk.team.name}、決定機！ ${buildup} ${endText}`, "chance");
-    return false;
+    return { goal: false, outcome, shooter: shooter.name, assister: assister.name };
   }
 
   flavor(atk, def, at) {

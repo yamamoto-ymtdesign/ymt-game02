@@ -111,14 +111,24 @@ td.lo { color: #ef9a9a; }
 #speed-ctrl { font-size: 0.85rem; color: #9fc0a5; }
 #speed-ctrl button { padding: 0.2rem 0.6rem; font-size: 0.85rem; }
 
+#pitch {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  margin: 0.8rem auto 0;
+  border-radius: 8px;
+  border: 1px solid #2a4231;
+  background: #278a40;
+}
 #log {
   background: #101c14;
   border: 1px solid #2a4231;
   border-radius: 8px;
   padding: 0.8rem;
-  height: 320px;
+  height: 200px;
   overflow-y: auto;
-  margin: 0.8rem 0;
+  margin: 0.8rem auto;
+  max-width: 760px;
   font-size: 0.92rem;
 }
 .ev { padding: 0.15rem 0; }
