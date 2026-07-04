@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""国別チームのロスター(20人)を生成し teams/*.md を出力する。
+"""国別チームのロスター(20人)を生成し teams/*.md と js/teams-data.js を出力する。
 
 バランス保証:
 - 全チームのスカッド総合値(20人x8能力の合計)を SQUAD_TOTAL に完全一致させる
@@ -9,6 +9,7 @@
 SEED を変えなければ出力は毎回同じ(コミットされた .md と一致する)。
 """
 
+import json
 import random
 from pathlib import Path
 
@@ -131,8 +132,10 @@ NAMES = {
 }
 
 # エース(stars)が強化される能力: ドリブル, シュート, パス, メンタル
+# 総合値はスカッド単位で9000に正規化されるため、エースを尖らせるほど控えが薄くなる。
+# ただし先発11人の格差が開きすぎないよう、ボーナスは控えめにする。
 STAR_STATS = [2, 3, 1, 7]
-STAR_BONUS = 14
+STAR_BONUS = 8
 
 
 def clamp(v):
@@ -191,13 +194,32 @@ def render_md(team, players):
     return "\n".join(lines) + "\n"
 
 
+def render_js(all_teams):
+    data = {}
+    for team, players in all_teams:
+        data[team["file"]] = {
+            "name": team["name"],
+            "desc": team["desc"],
+            "players": [{"name": p["name"], "pos": p["pos"], "stats": p["stats"]}
+                        for p in players],
+        }
+    body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return ("// tools/generate_teams.py により生成される。手動編集しないこと。\n"
+            f"const STAT_NAMES = {json.dumps(STATS, ensure_ascii=False)};\n"
+            f"const SQUAD_TOTAL = {SQUAD_TOTAL};\n"
+            f"const TEAMS_DATA = {body};\n")
+
+
 def main():
     rng = random.Random(SEED)
-    out_dir = Path(__file__).resolve().parent.parent / "teams"
+    root = Path(__file__).resolve().parent.parent
+    out_dir = root / "teams"
     out_dir.mkdir(exist_ok=True)
+    all_teams = []
     print(f"{'チーム':<8} 総合値  ベストXI概算")
     for team in TEAMS:
         players = generate_team(rng, team)
+        all_teams.append((team, players))
         (out_dir / f"{team['file']}.md").write_text(render_md(team, players), encoding="utf-8")
         # ベストXI概算(公平性チェック用): 各ポジション上位を 1-4-4-2 で単純選抜
         by_pos = {pos: sorted((p for p in players if p["pos"] == pos),
@@ -206,6 +228,11 @@ def main():
         squad_total = sum(sum(p["stats"]) for p in players)
         xi_total = sum(sum(p["stats"]) for p in xi)
         print(f"{team['name']:<8} {squad_total}   {xi_total}")
+
+    js_dir = root / "js"
+    js_dir.mkdir(exist_ok=True)
+    (js_dir / "teams-data.js").write_text(render_js(all_teams), encoding="utf-8")
+    print("js/teams-data.js を出力しました")
 
 
 if __name__ == "__main__":

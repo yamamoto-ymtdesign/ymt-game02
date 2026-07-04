@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テキストイレブン — 戦略テキストで戦うサッカーシミュレーション</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <h1>⚽ テキストイレブン</h1>
+  <p class="tagline">ピッチに立つのは選手。だが、試合を決めるのは紙の上の戦略だ。</p>
+</header>
+
+<main>
+
+<!-- 1. セットアップ画面 -->
+<section id="screen-setup" class="screen active">
+  <h2 class="step">STEP 1 ─ チームとスタメンを決めて、戦略ファイルをダウンロード</h2>
+  <p class="hint">
+    監督名を入力し、使用チームとフォーメーションを選び、ロスターの一覧表をクリックして
+    スターティングメンバー11人を決めてください。ダウンロードされる戦略ファイル（.md）には
+    選んだ選手が入力済みです。ファイルを開いて、攻撃スタイルなどの戦術を
+    <code>[x]</code> で選んでから STEP 2 で読み込ませます。
+  </p>
+  <div id="setup-panels" class="columns"></div>
+  <div class="nav">
+    <button id="to-load" class="primary">STEP 2 読み込み画面へ →</button>
+  </div>
+</section>
+
+<!-- 2. 読み込み画面 -->
+<section id="screen-load" class="screen">
+  <h2 class="step">STEP 2 ─ 記入済みの戦略ファイルを読み込んで試合開始</h2>
+  <p class="hint">編集した戦略ファイル（.md）を両監督分読み込ませてください。2つとも受理されると試合を開始できます。</p>
+  <div class="columns">
+    <div class="panel">
+      <h3>ホーム側 戦略ファイル</h3>
+      <input type="file" id="file-0" accept=".md,.txt">
+      <div id="file-status-0" class="file-status"></div>
+    </div>
+    <div class="panel">
+      <h3>アウェイ側 戦略ファイル</h3>
+      <input type="file" id="file-1" accept=".md,.txt">
+      <div id="file-status-1" class="file-status"></div>
+    </div>
+  </div>
+  <div class="row seed-row">
+    <label>乱数シード（空欄ならランダム）: </label>
+    <input id="seed-input" placeholder="リプレイ再現用">
+  </div>
+  <div class="nav">
+    <button id="back-setup">← STEP 1 に戻る</button>
+    <button id="start-match" class="primary" disabled>🏟 試合開始</button>
+  </div>
+</section>
+
+<!-- 3. 試合画面 -->
+<section id="screen-match" class="screen">
+  <div id="scoreboard">
+    <div id="sb-teams">-</div>
+    <div id="sb-minute">-</div>
+    <div id="speed-ctrl">
+      速度:
+      <button data-speed="1" class="active">×1</button>
+      <button data-speed="2">×2</button>
+      <button data-speed="8">×8</button>
+    </div>
+  </div>
+  <div id="log"></div>
+
+  <div id="ht-panel" class="hidden">
+    <h2 class="step">ハーフタイム ─ レポートを確認して後半の指示を出す</h2>
+    <p class="hint">
+      「HT指示ひな形をダウンロード」で現在の疲労・調子・評価入りのファイルを取得し、
+      編集して読み込ませてください（選手交代 最大3人＋戦術変更）。変更しない場合は「変更なしで続行」。
+    </p>
+    <div id="ht-body" class="columns"></div>
+    <div class="nav">
+      <button id="start-2nd" class="primary" disabled>⚽ 後半キックオフ</button>
+    </div>
+  </div>
+
+  <div id="result-panel" class="hidden">
+    <h2 class="step">試合結果</h2>
+    <div id="result-body"></div>
+    <div class="nav">
+      <button id="new-match" class="primary">同じメンバーでもう一試合（読み込み画面へ）</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>テキストイレブン（プロトタイプ） — 全チームのスカッド総合値は同一です。差は「配分」だけ。</p>
+</footer>
+
+<script src="js/teams-data.js"></script>
+<script src="js/md.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
