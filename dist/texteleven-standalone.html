@@ -1,0 +1,1903 @@
+<title>テキストイレブン — 戦略テキストで戦うサッカーシミュレーション</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+  background: #0e1a12;
+  color: #e8f0e8;
+  line-height: 1.6;
+}
+header {
+  text-align: center;
+  padding: 1.2rem 1rem 0.6rem;
+  background: linear-gradient(180deg, #143d20, #0e1a12);
+}
+header h1 { margin: 0; letter-spacing: 0.1em; }
+.tagline { margin: 0.3rem 0 0; color: #9fc0a5; font-size: 0.9rem; }
+main { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+footer { text-align: center; color: #6f8a74; font-size: 0.8rem; padding: 1.5rem; }
+
+.screen { display: none; }
+.screen.active { display: block; }
+.hidden { display: none !important; }
+
+.step {
+  border-left: 5px solid #4caf50;
+  padding-left: 0.6rem;
+  font-size: 1.1rem;
+}
+.hint { color: #9fc0a5; font-size: 0.88rem; }
+.desc { color: #cfe3d2; font-style: italic; font-size: 0.9rem; }
+.warn { color: #ffb74d !important; }
+code { background: #1c2f21; padding: 0 0.3em; border-radius: 3px; }
+
+.columns { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+.columns > .panel { flex: 1 1 460px; }
+.panel {
+  background: #16241a;
+  border: 1px solid #2a4231;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.row { margin: 0.5rem 0; }
+.row label { color: #9fc0a5; }
+input, select {
+  background: #0e1a12;
+  color: #e8f0e8;
+  border: 1px solid #3a5a44;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.95rem;
+}
+button {
+  background: #1e3526;
+  color: #e8f0e8;
+  border: 1px solid #3a5a44;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  margin: 0.3rem 0.3rem 0.3rem 0;
+}
+button:hover:not(:disabled) { background: #2a4a34; }
+button.primary { background: #2e7d32; border-color: #4caf50; font-weight: bold; }
+button.primary:hover:not(:disabled) { background: #388e3c; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.active { outline: 2px solid #4caf50; }
+
+.table-scroll { overflow-x: auto; margin: 0.5rem 0; }
+table.roster { border-collapse: collapse; font-size: 0.82rem; white-space: nowrap; width: 100%; }
+table.roster th, table.roster td {
+  border-bottom: 1px solid #24382a;
+  padding: 0.25rem 0.45rem;
+  text-align: center;
+}
+table.roster th { color: #9fc0a5; position: sticky; top: 0; background: #16241a; }
+table.roster .pname { text-align: left; font-weight: bold; }
+table.roster tbody tr { cursor: pointer; }
+table.roster tbody tr:hover { background: #1e3526; }
+table.roster tr.picked { background: #274d31; }
+table.roster tr.picked:hover { background: #2e5a3a; }
+table.roster tr.bench { color: #8aa38f; }
+table.roster tr.out { color: #6f8a74; text-decoration: line-through; }
+table.roster.small tbody tr, table.roster.small tr { cursor: default; }
+td.hi { color: #81c784; font-weight: bold; }
+td.lo { color: #ef9a9a; }
+.mark { color: #4caf50; }
+.pick-status { font-weight: bold; color: #cfe3d2; }
+
+.tactics-h { margin: 0.8rem 0 0.4rem; font-size: 1rem; color: #cfe3d2; }
+.tactics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 0.8rem; margin-bottom: 0.8rem; }
+.tsel { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; color: #9fc0a5; }
+.tsel select { flex: 1; max-width: 62%; }
+
+.nav { margin: 1rem 0; text-align: center; }
+.nav .hint { margin: 0.4rem 0; }
+.file-status { margin-top: 0.5rem; font-size: 0.88rem; }
+.ok { color: #81c784; }
+.err { color: #ef9a9a; font-weight: bold; }
+.err-item { color: #ef9a9a; margin: 0.1rem 0 0.1rem 1em; }
+.seed-row { text-align: center; color: #9fc0a5; font-size: 0.88rem; }
+
+#scoreboard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: #143d20;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+#sb-teams { font-size: 1.3rem; font-weight: bold; }
+#sb-minute { color: #cfe3d2; }
+#speed-ctrl { font-size: 0.85rem; color: #9fc0a5; }
+#speed-ctrl button { padding: 0.2rem 0.6rem; font-size: 0.85rem; }
+
+#pitch {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  margin: 0.8rem auto 0;
+  border-radius: 8px;
+  border: 1px solid #2a4231;
+  background: #278a40;
+}
+#log {
+  background: #101c14;
+  border: 1px solid #2a4231;
+  border-radius: 8px;
+  padding: 0.8rem;
+  height: 200px;
+  overflow-y: auto;
+  margin: 0.8rem auto;
+  max-width: 760px;
+  font-size: 0.92rem;
+}
+.ev { padding: 0.15rem 0; }
+.ev .min { color: #7fa886; }
+.ev-goal { color: #ffd54f; font-weight: bold; font-size: 1.05rem; }
+.ev-chance { color: #aed581; }
+.ev-trump { color: #4fc3f7; font-weight: bold; }
+.ev-info { color: #9fc0a5; }
+.ev-section { color: #fff; font-weight: bold; border-top: 1px dashed #3a5a44; margin-top: 0.3rem; padding-top: 0.3rem; }
+.mvp { font-size: 1.1rem; color: #ffd54f; }
+
+</style>
+<header>
+  <h1>⚽ テキストイレブン</h1>
+  <p class="tagline">ピッチに立つのは選手。だが、試合を決めるのは紙の上の戦略だ。</p>
+</header>
+
+<main>
+
+<!-- 1. セットアップ画面 -->
+<section id="screen-setup" class="screen active">
+  <h2 class="step">STEP 1 ─ 両監督のチーム・スタメン・戦術を決める</h2>
+  <p class="hint">
+    監督名を入力し、使用チームとフォーメーションを選び、ロスターの一覧表をクリックして
+    スターティングメンバー11人を決めてください。戦術を選んだら、そのまま
+    <strong>「この設定で試合開始」</strong>で観戦できます（動作チェックに便利）。
+    じっくり作り込みたい場合は戦略ファイル（.md）をダウンロードして編集し、STEP 2 で読み込ませます。
+  </p>
+  <div id="setup-panels" class="columns"></div>
+  <div class="nav">
+    <button id="quick-start" class="primary" disabled>🏟 この設定で試合開始（ファイル不要）</button>
+    <p id="quick-note" class="hint"></p>
+    <button id="to-load">戦略ファイルを読み込んで開始する（STEP 2）→</button>
+  </div>
+</section>
+
+<!-- 2. 読み込み画面 -->
+<section id="screen-load" class="screen">
+  <h2 class="step">STEP 2 ─ 記入済みの戦略ファイルを読み込んで試合開始</h2>
+  <p class="hint">編集した戦略ファイル（.md）を両監督分読み込ませてください。2つとも受理されると試合を開始できます。</p>
+  <div class="columns">
+    <div class="panel">
+      <h3>ホーム側 戦略ファイル</h3>
+      <input type="file" id="file-0" accept=".md,.txt">
+      <div id="file-status-0" class="file-status"></div>
+    </div>
+    <div class="panel">
+      <h3>アウェイ側 戦略ファイル</h3>
+      <input type="file" id="file-1" accept=".md,.txt">
+      <div id="file-status-1" class="file-status"></div>
+    </div>
+  </div>
+  <div class="row seed-row">
+    <label>乱数シード（空欄ならランダム）: </label>
+    <input id="seed-input" placeholder="リプレイ再現用">
+  </div>
+  <div class="nav">
+    <button id="back-setup">← STEP 1 に戻る</button>
+    <button id="start-match" class="primary" disabled>🏟 試合開始</button>
+  </div>
+</section>
+
+<!-- 3. 試合画面 -->
+<section id="screen-match" class="screen">
+  <div id="scoreboard">
+    <div id="sb-teams">-</div>
+    <div id="sb-minute">-</div>
+    <div id="speed-ctrl">
+      速度:
+      <button data-speed="1" class="active">×1</button>
+      <button data-speed="2">×2</button>
+      <button data-speed="8">×8</button>
+    </div>
+  </div>
+  <canvas id="pitch"></canvas>
+  <div id="log"></div>
+
+  <div id="ht-panel" class="hidden">
+    <h2 class="step">ハーフタイム ─ レポートを確認して後半の指示を出す</h2>
+    <p class="hint">
+      「HT指示ひな形をダウンロード」で現在の疲労・調子・評価入りのファイルを取得し、
+      編集して読み込ませてください（選手交代 最大3人＋戦術変更）。変更しない場合は「変更なしで続行」。
+    </p>
+    <div id="ht-body" class="columns"></div>
+    <div class="nav">
+      <button id="start-2nd" class="primary" disabled>⚽ 後半キックオフ</button>
+    </div>
+  </div>
+
+  <div id="result-panel" class="hidden">
+    <h2 class="step">試合結果</h2>
+    <div id="result-body"></div>
+    <div class="nav">
+      <button id="rematch" class="primary">🔁 同じ設定でもう一試合</button>
+      <button id="new-match">設定を変更する（STEP 1 へ）</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>テキストイレブン（プロトタイプ） — 全チームのスカッド総合値は同一です。差は「配分」だけ。</p>
+</footer>
+<script>
+// tools/generate_teams.py により生成される。手動編集しないこと。
+const STAT_NAMES = ["スピード", "パス", "ドリブル", "シュート", "守備", "空中戦", "スタミナ", "メンタル"];
+const SQUAD_TOTAL = 9000;
+const TEAMS_DATA = {"japan":{"name":"日本","desc":"平均身長は参加チーム中もっとも低い。だが90分間、彼らの足は止まらない。","players":[{"name":"シミズ","pos":"GK","stats":[57,57,37,25,69,57,64,59]},{"name":"ワタナベ","pos":"GK","stats":[50,60,42,25,69,61,59,67]},{"name":"ハヤシ","pos":"DF","stats":[58,55,50,40,62,55,61,57]},{"name":"ヤマグチ","pos":"DF","stats":[57,63,54,35,73,51,65,57]},{"name":"モリ","pos":"DF","stats":[55,51,47,29,70,54,68,59]},{"name":"スズキ","pos":"DF","stats":[58,58,43,38,64,64,64,59]},{"name":"イノウエ","pos":"DF","stats":[52,59,47,33,71,57,63,62]},{"name":"サトウ","pos":"DF","stats":[52,64,41,34,69,56,68,54]},{"name":"ヤマモト","pos":"DF","stats":[52,71,49,32,67,53,55,58]},{"name":"イトウ","pos":"MF","stats":[58,71,60,47,50,42,68,69]},{"name":"ヨシダ","pos":"MF","stats":[65,67,62,55,52,42,67,51]},{"name":"タカハシ","pos":"MF","stats":[60,60,48,48,53,47,66,54]},{"name":"ナカムラ","pos":"MF","stats":[59,74,63,45,55,35,65,49]},{"name":"タナカ","pos":"MF","stats":[52,74,61,48,54,34,71,54]},{"name":"ササキ","pos":"MF","stats":[61,69,64,45,49,43,76,56]},{"name":"コバヤシ","pos":"MF","stats":[50,70,63,45,50,35,72,59]},{"name":"マツモト","pos":"FW","stats":[69,62,57,61,38,63,74,53]},{"name":"キムラ","pos":"FW","stats":[65,63,63,67,46,48,71,59]},{"name":"カトウ","pos":"FW","stats":[63,60,64,65,27,51,56,56]},{"name":"ヤマダ","pos":"FW","stats":[59,63,70,65,42,56,68,63]}]},"spain":{"name":"スペイン","desc":"彼らの練習は、輪になったパス回しから始まり、パス回しで終わるという。","players":[{"name":"ディアス","pos":"GK","stats":[36,56,45,25,64,61,47,76]},{"name":"ルイス","pos":"GK","stats":[46,60,37,30,73,52,53,64]},{"name":"ロドリゲス","pos":"DF","stats":[47,59,44,34,71,53,50,55]},{"name":"フェルナンデス","pos":"DF","stats":[44,66,48,46,68,56,58,70]},{"name":"ラモス","pos":"DF","stats":[41,72,41,33,78,58,65,64]},{"name":"マルティネス","pos":"DF","stats":[41,59,40,33,72,53,58,56]},{"name":"マルティン","pos":"DF","stats":[46,61,42,38,74,59,53,66]},{"name":"ヒメネス","pos":"DF","stats":[41,63,47,44,70,59,62,70]},{"name":"ガルシア","pos":"DF","stats":[50,70,47,46,67,56,66,73]},{"name":"ペレス","pos":"MF","stats":[54,73,63,59,54,39,65,62]},{"name":"アルバレス","pos":"MF","stats":[58,77,59,54,56,43,75,53]},{"name":"ゴメス","pos":"MF","stats":[52,82,61,45,61,47,65,50]},{"name":"ロペス","pos":"MF","stats":[49,82,57,42,53,48,57,64]},{"name":"トーレス","pos":"MF","stats":[51,79,51,53,60,56,62,62]},{"name":"サンチェス","pos":"MF","stats":[50,73,58,56,50,45,65,59]},{"name":"エルナンデス","pos":"MF","stats":[44,82,60,45,53,41,63,68]},{"name":"ナバーロ","pos":"FW","stats":[58,71,59,58,30,42,52,61]},{"name":"ロメロ","pos":"FW","stats":[59,65,67,68,48,56,49,56]},{"name":"ゴンサレス","pos":"FW","stats":[47,72,70,63,34,53,54,65]},{"name":"モレノ","pos":"FW","stats":[57,64,62,68,38,56,63,62]}]},"brazil":{"name":"ブラジル","desc":"路地裏のリズムで育った男たち。1対1で彼らを止められた者は幸運だ。","players":[{"name":"ソウザ","pos":"GK","stats":[58,50,40,28,69,51,51,68]},{"name":"フェレイラ","pos":"GK","stats":[47,56,49,25,61,65,52,60]},{"name":"オリヴェイラ","pos":"DF","stats":[55,65,59,39,64,67,61,52]},{"name":"ペレイラ","pos":"DF","stats":[55,53,37,56,68,60,48,57]},{"name":"バチスタ","pos":"DF","stats":[64,57,54,39,68,48,77,46]},{"name":"リマ","pos":"DF","stats":[49,63,61,47,69,61,58,51]},{"name":"カストロ","pos":"DF","stats":[60,61,60,52,62,57,53,59]},{"name":"カルヴァーリョ","pos":"DF","stats":[59,54,44,30,61,60,51,46]},{"name":"アラウージョ","pos":"DF","stats":[62,54,61,33,68,45,70,67]},{"name":"ヒベイロ","pos":"MF","stats":[49,74,61,55,59,45,69,43]},{"name":"ホドリゲス","pos":"MF","stats":[57,59,65,46,47,42,66,55]},{"name":"サントス","pos":"MF","stats":[55,62,68,52,38,47,65,58]},{"name":"アウヴェス","pos":"MF","stats":[55,59,70,59,53,40,48,52]},{"name":"モウラ","pos":"MF","stats":[66,60,69,63,53,42,72,43]},{"name":"シウバ","pos":"MF","stats":[48,76,78,46,52,33,55,56]},{"name":"モンテイロ","pos":"MF","stats":[58,57,75,57,49,60,61,58]},{"name":"マルチンス","pos":"FW","stats":[64,60,74,74,27,60,50,64]},{"name":"バルボーザ","pos":"FW","stats":[73,60,74,67,35,47,62,50]},{"name":"ナシメント","pos":"FW","stats":[63,55,68,62,29,61,49,60]},{"name":"メロ","pos":"FW","stats":[67,62,80,68,28,57,64,59]}]},"england":{"name":"イングランド","desc":"霧の国から来た屈強な男たち。ゴール前に上がるボールは、彼らへのご馳走だ。","players":[{"name":"ベイカー","pos":"GK","stats":[39,50,26,33,77,66,67,55]},{"name":"グリーン","pos":"GK","stats":[39,43,25,38,66,73,64,59]},{"name":"ジョーンズ","pos":"DF","stats":[51,52,28,37,79,75,63,50]},{"name":"ライト","pos":"DF","stats":[52,47,33,38,71,79,62,54]},{"name":"エヴァンス","pos":"DF","stats":[55,51,39,46,67,69,72,50]},{"name":"スミス","pos":"DF","stats":[50,54,39,45,72,72,61,52]},{"name":"ホール","pos":"DF","stats":[49,48,37,53,62,80,71,52]},{"name":"ウィリアムズ","pos":"DF","stats":[49,48,39,46,74,74,61,57]},{"name":"ハリソン","pos":"DF","stats":[44,47,43,37,70,73,64,53]},{"name":"ブラウン","pos":"MF","stats":[55,62,53,51,58,58,62,61]},{"name":"トンプソン","pos":"MF","stats":[56,60,52,50,58,66,75,59]},{"name":"クラーク","pos":"MF","stats":[51,54,44,62,59,56,70,55]},{"name":"ウォーカー","pos":"MF","stats":[53,61,50,58,58,59,69,49]},{"name":"デイヴィス","pos":"MF","stats":[64,62,47,52,52,61,69,57]},{"name":"ジョンソン","pos":"MF","stats":[56,63,54,48,67,58,67,55]},{"name":"ヒューズ","pos":"MF","stats":[58,55,52,57,58,56,70,56]},{"name":"ウィルソン","pos":"FW","stats":[51,46,59,74,42,66,68,62]},{"name":"ロビンソン","pos":"FW","stats":[68,45,52,72,35,69,61,53]},{"name":"ホワイト","pos":"FW","stats":[64,61,56,78,38,58,61,54]},{"name":"テイラー","pos":"FW","stats":[58,48,55,66,41,64,67,54]}]},"germany":{"name":"ドイツ","desc":"規律、走力、そしてまた規律。彼らの辞書に「疲労」の文字はない……ように見える。","players":[{"name":"ウェーバー","pos":"GK","stats":[40,54,29,25,78,65,63,64]},{"name":"ワーグナー","pos":"GK","stats":[43,54,32,25,74,68,67,66]},{"name":"クルーガー","pos":"DF","stats":[52,56,39,37,81,70,67,60]},{"name":"クライン","pos":"DF","stats":[53,65,36,30,79,68,70,66]},{"name":"フィッシャー","pos":"DF","stats":[48,60,43,27,68,67,71,61]},{"name":"シュナイダー","pos":"DF","stats":[44,54,36,33,73,73,67,62]},{"name":"ミュラー","pos":"DF","stats":[49,61,37,34,75,68,66,60]},{"name":"ランゲ","pos":"DF","stats":[49,50,37,34,70,66,66,65]},{"name":"ベッカー","pos":"DF","stats":[50,54,33,30,75,63,62,63]},{"name":"リヒター","pos":"MF","stats":[51,67,45,46,60,51,70,59]},{"name":"マイヤー","pos":"MF","stats":[59,66,51,45,67,45,70,60]},{"name":"シュミット","pos":"MF","stats":[49,67,47,41,58,58,79,57]},{"name":"ツィンマーマン","pos":"MF","stats":[54,68,44,46,55,53,75,63]},{"name":"ノイマン","pos":"MF","stats":[59,74,50,46,63,60,74,61]},{"name":"ハルトマン","pos":"MF","stats":[50,68,51,38,56,54,71,64]},{"name":"ヴォルフ","pos":"MF","stats":[57,63,47,43,60,53,72,61]},{"name":"ケーラー","pos":"FW","stats":[59,60,57,51,40,57,63,60]},{"name":"シュルツ","pos":"FW","stats":[58,60,58,58,44,56,67,58]},{"name":"ホフマン","pos":"FW","stats":[58,53,51,52,41,62,62,57]},{"name":"シュヴァルツ","pos":"FW","stats":[57,55,52,61,41,57,71,63]}]},"italy":{"name":"イタリア","desc":"カテナチオの末裔。彼らのゴール前には、見えない鎖が張られている。","players":[{"name":"ガッロ","pos":"GK","stats":[43,40,31,28,83,62,52,74]},{"name":"ルッソ","pos":"GK","stats":[43,48,40,30,79,66,45,70]},{"name":"リッチ","pos":"DF","stats":[50,53,43,52,78,57,53,72]},{"name":"ブルーノ","pos":"DF","stats":[43,52,39,50,76,66,65,67]},{"name":"ビアンキ","pos":"DF","stats":[37,51,44,46,77,66,56,70]},{"name":"リッツォ","pos":"DF","stats":[42,50,36,37,76,66,54,63]},{"name":"ロッシ","pos":"DF","stats":[51,52,49,34,85,70,55,67]},{"name":"ロマーノ","pos":"DF","stats":[45,52,45,40,84,72,51,52]},{"name":"モレッティ","pos":"DF","stats":[42,57,45,38,75,63,56,67]},{"name":"コスタ","pos":"MF","stats":[48,60,51,40,63,56,52,62]},{"name":"エスポジト","pos":"MF","stats":[42,58,55,53,59,56,56,65]},{"name":"コロンボ","pos":"MF","stats":[49,70,53,52,60,58,51,60]},{"name":"ジョルダーノ","pos":"MF","stats":[45,58,67,46,70,57,63,57]},{"name":"コンティ","pos":"MF","stats":[48,62,45,55,69,47,56,66]},{"name":"マンチーニ","pos":"MF","stats":[48,63,49,52,59,51,58,67]},{"name":"ロンバルディ","pos":"MF","stats":[43,67,54,55,71,55,60,60]},{"name":"グレコ","pos":"FW","stats":[59,46,58,77,45,54,60,70]},{"name":"マリーノ","pos":"FW","stats":[47,50,54,77,45,61,59,60]},{"name":"フェラーリ","pos":"FW","stats":[61,55,52,75,43,57,59,72]},{"name":"デ・ルーカ","pos":"FW","stats":[60,53,57,72,46,62,63,71]}]},"france":{"name":"フランス","desc":"陸上チームと間違えてはいけない。置き去りにされてから気づいても、もう遅い。","players":[{"name":"フォンテーヌ","pos":"GK","stats":[55,42,32,25,69,70,50,72]},{"name":"フルニエ","pos":"GK","stats":[52,41,45,25,79,71,43,49]},{"name":"ロベール","pos":"DF","stats":[69,34,56,49,75,75,55,43]},{"name":"モロー","pos":"DF","stats":[57,53,53,25,71,64,54,46]},{"name":"デュラン","pos":"DF","stats":[66,47,52,50,72,66,40,53]},{"name":"トマ","pos":"DF","stats":[67,51,43,46,65,76,55,51]},{"name":"ルフェーヴル","pos":"DF","stats":[58,48,50,42,81,55,62,45]},{"name":"プティ","pos":"DF","stats":[61,42,46,39,71,60,54,39]},{"name":"ベルトラン","pos":"DF","stats":[45,50,57,43,65,68,49,47]},{"name":"ルー","pos":"MF","stats":[67,63,48,60,52,58,59,64]},{"name":"ダヴィド","pos":"MF","stats":[72,57,50,63,57,56,64,53]},{"name":"ベルナール","pos":"MF","stats":[58,62,49,53,64,43,63,46]},{"name":"ルロワ","pos":"MF","stats":[73,59,52,59,65,63,68,50]},{"name":"リシャール","pos":"MF","stats":[70,62,56,48,59,51,61,41]},{"name":"ローラン","pos":"MF","stats":[56,55,75,60,64,44,55,60]},{"name":"ヴァンサン","pos":"MF","stats":[55,61,58,55,66,61,65,51]},{"name":"マルタン","pos":"FW","stats":[74,48,61,62,36,62,65,53]},{"name":"ミシェル","pos":"FW","stats":[75,47,65,78,47,54,55,46]},{"name":"シモン","pos":"FW","stats":[71,48,69,63,32,63,63,47]},{"name":"デュボワ","pos":"FW","stats":[77,45,69,70,43,62,55,60]}]},"argentina":{"name":"アルゼンチン","desc":"タンゴの国のエースは、たった一人で試合を決める。彼にボールを預けろ——それが約束だ。","players":[{"name":"メンドサ","pos":"GK","stats":[38,39,31,35,72,57,45,74]},{"name":"バレーラ","pos":"GK","stats":[60,51,49,25,68,64,44,70]},{"name":"アギーレ","pos":"DF","stats":[39,50,37,49,71,62,47,65]},{"name":"カブレラ","pos":"DF","stats":[35,62,44,39,88,48,59,65]},{"name":"ドミンゲス","pos":"DF","stats":[43,52,45,43,78,48,64,74]},{"name":"モリーナ","pos":"DF","stats":[45,47,55,31,69,40,56,68]},{"name":"アルディレス","pos":"DF","stats":[58,52,67,38,50,57,45,63]},{"name":"スアレス","pos":"DF","stats":[49,58,44,34,68,59,55,66]},{"name":"オルティス","pos":"DF","stats":[47,50,47,35,64,51,53,69]},{"name":"パチェコ","pos":"MF","stats":[64,59,53,57,41,54,52,69]},{"name":"ソサ","pos":"MF","stats":[57,78,57,60,47,51,60,67]},{"name":"ベニテス","pos":"MF","stats":[57,83,81,57,45,45,70,78]},{"name":"ロハス","pos":"MF","stats":[41,64,61,64,54,48,55,70]},{"name":"アコスタ","pos":"MF","stats":[56,60,65,79,53,37,59,68]},{"name":"ヌニェス","pos":"MF","stats":[73,55,73,57,38,39,68,71]},{"name":"バスケス","pos":"MF","stats":[43,71,58,44,61,46,63,65]},{"name":"ブスタマンテ","pos":"FW","stats":[60,39,72,81,34,56,41,56]},{"name":"フィゲロア","pos":"FW","stats":[70,43,70,64,42,58,55,61]},{"name":"レデスマ","pos":"FW","stats":[60,74,70,84,25,49,53,86]},{"name":"ポンセ","pos":"FW","stats":[60,56,76,82,30,58,42,73]}]},"netherlands":{"name":"オランダ","desc":"全員が攻め、全員が守る。ポジションは、彼らにとってただの背番号にすぎない。","players":[{"name":"デ・ブール","pos":"GK","stats":[42,48,33,25,73,61,54,69]},{"name":"フィッセル","pos":"GK","stats":[49,50,33,25,70,63,55,63]},{"name":"メイヤー","pos":"DF","stats":[52,59,43,38,73,61,63,56]},{"name":"ファン・レーウェン","pos":"DF","stats":[49,53,41,38,69,70,57,59]},{"name":"スホルテン","pos":"DF","stats":[49,53,42,38,69,65,56,60]},{"name":"ディクストラ","pos":"DF","stats":[48,59,47,41,68,67,59,59]},{"name":"クイパー","pos":"DF","stats":[52,58,43,41,75,67,56,62]},{"name":"デ・フリース","pos":"DF","stats":[51,52,42,44,67,69,60,62]},{"name":"ムルダー","pos":"DF","stats":[51,54,38,49,68,68,61,51]},{"name":"ヤンセン","pos":"MF","stats":[50,64,61,57,52,55,67,63]},{"name":"ペーテルス","pos":"MF","stats":[53,66,57,51,58,53,72,59]},{"name":"ポストマ","pos":"MF","stats":[58,62,54,53,57,52,59,60]},{"name":"スミット","pos":"MF","stats":[59,61,56,50,52,51,62,58]},{"name":"ティンメルマンス","pos":"MF","stats":[62,67,57,50,58,51,67,63]},{"name":"デッケル","pos":"MF","stats":[52,68,56,53,52,54,64,59]},{"name":"ボス","pos":"MF","stats":[55,65,64,55,51,51,64,60]},{"name":"ブラウワー","pos":"FW","stats":[68,51,56,62,41,57,61,65]},{"name":"ファン・デン・ベルフ","pos":"FW","stats":[66,55,64,65,35,53,60,59]},{"name":"ヘンドリクス","pos":"FW","stats":[59,56,62,71,36,61,62,60]},{"name":"バッカー","pos":"FW","stats":[64,54,58,72,38,51,65,58]}]},"portugal":{"name":"ポルトガル","desc":"大西洋の風とともにサイドを駆け上がる。狭い道こそ、彼らの独壇場だ。","players":[{"name":"パイヴァ","pos":"GK","stats":[38,69,37,25,59,65,45,65]},{"name":"ピント","pos":"GK","stats":[52,58,47,28,67,67,58,60]},{"name":"クルス","pos":"DF","stats":[53,55,41,34,73,70,63,64]},{"name":"マチャド","pos":"DF","stats":[58,61,50,42,63,58,70,51]},{"name":"カルドーゾ","pos":"DF","stats":[55,44,63,31,68,53,66,56]},{"name":"アゼヴェード","pos":"DF","stats":[54,57,43,50,68,59,55,53]},{"name":"アブレウ","pos":"DF","stats":[42,62,52,37,74,55,58,47]},{"name":"ノゲイラ","pos":"DF","stats":[55,63,57,54,62,61,56,63]},{"name":"テイシェイラ","pos":"DF","stats":[58,59,56,42,65,47,49,54]},{"name":"レイテ","pos":"MF","stats":[60,73,65,63,55,42,65,50]},{"name":"ドゥアルテ","pos":"MF","stats":[54,63,62,56,44,52,59,53]},{"name":"ヴィエイラ","pos":"MF","stats":[56,74,67,56,48,49,61,57]},{"name":"モライス","pos":"MF","stats":[73,62,61,59,50,42,59,54]},{"name":"ブランダオン","pos":"MF","stats":[64,56,56,48,56,43,69,45]},{"name":"ゴンサウヴェス","pos":"MF","stats":[54,61,53,48,52,49,59,49]},{"name":"フォンセカ","pos":"MF","stats":[63,66,72,58,55,44,66,52]},{"name":"ミランダ","pos":"FW","stats":[65,50,74,65,25,61,61,53]},{"name":"ファリア","pos":"FW","stats":[70,59,82,66,33,54,62,56]},{"name":"コエーリョ","pos":"FW","stats":[63,61,72,67,26,59,50,53]},{"name":"タヴァレス","pos":"FW","stats":[70,57,78,80,26,53,67,51]}]}};
+
+</script>
+<script>
+// 戦略ファイル / ハーフタイム指示ファイルの生成とパース
+
+const FORMATIONS = {
+  "4-4-2": { DF: 4, MF: 4, FW: 2, mid: 0, chance: 0, concede: 0 },
+  "4-3-3": { DF: 4, MF: 3, FW: 3, mid: 0, chance: 0.02, concede: 0.02 },
+  "3-5-2": { DF: 3, MF: 5, FW: 2, mid: 2, chance: 0, concede: 0.01 },
+  "4-2-3-1": { DF: 4, MF: 5, FW: 1, mid: 1, chance: 0, concede: -0.01 },
+  "5-3-2": { DF: 5, MF: 3, FW: 2, mid: -1, chance: -0.02, concede: -0.04 },
+};
+const ATTACK_STYLES = ["ポゼッション", "カウンター", "サイドアタック", "ロングボール"];
+const DEFENSE_STYLES = ["ハイプレス", "ゾーン", "リトリート", "マンマーク"];
+const LINES = ["高い", "普通", "低い"];
+const TEMPOS = ["速い", "普通", "遅い"];
+const TRUMPS = ["スーパーサブ", "ギアチェンジ", "鉄壁モード", "パワープレー"];
+const CONDITIONS = ["前半", "後半", "終盤", "リード", "同点", "ビハインド",
+  "2点差リード", "2点差ビハインド", "主力疲労"];
+const CHANGEABLE = ["攻撃スタイル", "守備スタイル", "ライン設定", "テンポ"];
+const POS_ORDER = ["GK", "DF", "MF", "FW"];
+
+function timestampStr(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function checkboxGroup(title, options, selected) {
+  const lines = [`### ${title}（1つだけ [x]）`, ""];
+  for (const o of options) lines.push(`- [${o === selected ? "x" : " "}] ${o}`);
+  return lines.join("\n");
+}
+
+// セットアップ画面の選択内容から、記入・編集用の戦略.mdを生成する
+function buildStrategyMd(sel) {
+  const team = TEAMS_DATA[sel.teamKey];
+  const starters = sel.starters; // {GK:[names], DF:[...], MF:[...], FW:[...]}
+  const starterSet = new Set(Object.values(starters).flat());
+  const bench = team.players.filter((p) => !starterSet.has(p.name));
+  const benchStr = bench.map((p) => `${p.name}(${p.pos})`).join(", ");
+  const benchFw = bench.find((p) => p.pos === "FW") || bench[0];
+  const now = new Date();
+
+  return `# テキストイレブン 戦略ファイル
+
+<!--
+  このファイルを編集して戦術を決め、「読み込み画面」で読み込ませてください。
+  ・チェックボックスは各グループ1つだけ [x] にする（他は [ ] のまま）
+  ・スターティングメンバーは選択済み。書き換える場合はロスターの表記と
+    フォーメーションの人数構成（下記コメント参照）を守ること
+  ・<!- - で始まるコメント行と自由記述は読み込み時に無視されます
+-->
+
+## チーム情報
+
+監督名: ${sel.manager}
+使用チーム: ${team.name}
+作成日時: ${now.toLocaleString("ja-JP")}
+
+## 基本戦術
+
+フォーメーション: ${sel.formation}
+<!-- 選択肢: 4-4-2 / 4-3-3 / 3-5-2 / 4-2-3-1 / 5-3-2
+     変更する場合はスターティングメンバーの人数構成も合わせること -->
+
+${checkboxGroup("攻撃スタイル", ATTACK_STYLES, "ポゼッション")}
+
+${checkboxGroup("守備スタイル", DEFENSE_STYLES, "ゾーン")}
+
+${checkboxGroup("ライン設定", LINES, "普通")}
+
+${checkboxGroup("テンポ", TEMPOS, "普通")}
+
+## スターティングメンバー
+
+GK: ${starters.GK.join(", ")}
+DF: ${starters.DF.join(", ")}
+MF: ${starters.MF.join(", ")}
+FW: ${starters.FW.join(", ")}
+
+<!-- ベンチ: ${benchStr} -->
+
+## 状況別指示
+
+<!--
+  0〜3個。書式: - IF 条件 THEN 変更項目=値, 変更項目=値
+  条件: 前半 / 後半 / 終盤(70分以降) / リード / 同点 / ビハインド /
+        2点差リード / 2点差ビハインド / 主力疲労 （ANDで最大3つ連結）
+  変更項目: 攻撃スタイル / 守備スタイル / ライン設定 / テンポ
+  不要な指示は行ごと削除してください
+-->
+
+- IF 終盤 AND リード THEN 守備スタイル=リトリート, テンポ=遅い
+
+## 切り札
+
+${checkboxGroup("種類", TRUMPS, "スーパーサブ")}
+
+発動条件: IF 後半 AND ビハインド
+指名選手: ${benchFw ? benchFw.name : ""}
+<!-- 指名選手はスーパーサブの場合のみ必須。ベンチの選手から選ぶこと -->
+
+## 意気込み
+
+（自由記述。試合判定には影響しません）
+`;
+}
+
+// ---- パース ----
+
+function normalizeLine(line) {
+  return line.replace(/：/g, ":").replace(/->/g, "→").trim();
+}
+
+// md をセクションごとの行リストに分解（### 小見出しもセクション内で扱う）
+function splitSections(text) {
+  const noComments = text.replace(/<!--[\s\S]*?-->/g, "");
+  const sections = {};
+  let current = null;
+  for (const raw of noComments.split(/\r?\n/)) {
+    const m = raw.match(/^##\s+(.+?)\s*$/);
+    if (m) { current = m[1]; sections[current] = []; continue; }
+    if (current && raw.trim() !== "") sections[current].push(raw);
+  }
+  return sections;
+}
+
+function parseCheckboxGroups(lines) {
+  // {グループ名: [選択された値, ...]}
+  const groups = {};
+  let g = null;
+  for (const raw of lines) {
+    const h = raw.match(/^###\s+(.+?)（.*$/) || raw.match(/^###\s+(.+?)\s*$/);
+    if (h) { g = h[1].trim(); groups[g] = []; continue; }
+    const c = raw.match(/^-\s*\[([xXｘＸ])\]\s*(.+?)\s*$/);
+    if (c && g) groups[g].push(c[2]);
+  }
+  return groups;
+}
+
+function parseKeyValues(lines) {
+  const kv = {};
+  for (const raw of lines) {
+    const line = normalizeLine(raw);
+    if (line.startsWith("-") || line.startsWith("#")) continue;
+    const m = line.match(/^([^:]+):\s*(.*)$/);
+    if (m) kv[m[1].trim()] = m[2].trim();
+  }
+  return kv;
+}
+
+function parseIfRules(lines, errors, label) {
+  const rules = [];
+  for (const raw of lines) {
+    const line = normalizeLine(raw);
+    const m = line.match(/^-\s*IF\s+(.+?)\s+THEN\s+(.+)$/i);
+    if (!m) continue;
+    const conds = m[1].split(/\s+AND\s+/i).map((s) => s.trim());
+    for (const c of conds) {
+      if (!CONDITIONS.includes(c)) errors.push(`${label}: 未定義の条件「${c}」`);
+    }
+    if (conds.length > 3) errors.push(`${label}: 条件のAND連結は3つまでです`);
+    const changes = {};
+    for (const part of m[2].split(/[,、]/)) {
+      const cm = part.trim().match(/^(.+?)\s*=\s*(.+)$/);
+      if (!cm) { errors.push(`${label}: 変更の書式が不正「${part.trim()}」`); continue; }
+      const key = cm[1].trim(), val = cm[2].trim();
+      if (!CHANGEABLE.includes(key)) { errors.push(`${label}: 変更できない項目「${key}」`); continue; }
+      const valid = { "攻撃スタイル": ATTACK_STYLES, "守備スタイル": DEFENSE_STYLES,
+        "ライン設定": LINES, "テンポ": TEMPOS }[key];
+      if (!valid.includes(val)) { errors.push(`${label}: 「${key}」に無い値「${val}」`); continue; }
+      changes[key] = val;
+    }
+    rules.push({ conds, changes });
+  }
+  return rules;
+}
+
+function pickOne(groups, name, options, errors, label) {
+  const sel = groups[name] || [];
+  if (sel.length === 0) { errors.push(`${label}: 「${name}」がどれも選択されていません（[x] を1つ付けてください）`); return null; }
+  if (sel.length > 1) { errors.push(`${label}: 「${name}」が複数選択されています（${sel.join(", ")}）`); return null; }
+  if (!options.includes(sel[0])) { errors.push(`${label}: 「${name}」に無い値「${sel[0]}」`); return null; }
+  return sel[0];
+}
+
+// チェックボックス形式を優先し、無ければ「キー: 値」形式で解釈する
+function pickTactic(groups, kv, name, options, errors, label) {
+  const checks = groups[name] || [];
+  if (checks.length === 0 && kv[name] !== undefined) {
+    if (!options.includes(kv[name])) { errors.push(`${label}: 「${name}」に無い値「${kv[name]}」`); return null; }
+    return kv[name];
+  }
+  return pickOne(groups, name, options, errors, label);
+}
+
+function parseCondExpr(str, errors, label) {
+  const s = normalizeLine(str).replace(/^IF\s+/i, "");
+  if (!s) return [];
+  const conds = s.split(/\s+AND\s+/i).map((x) => x.trim());
+  for (const c of conds) {
+    if (!CONDITIONS.includes(c)) errors.push(`${label}: 未定義の条件「${c}」`);
+  }
+  return conds;
+}
+
+// 戦略ファイル全体をパースして {strategy, errors} を返す
+function parseStrategyMd(text) {
+  const errors = [];
+  const sec = splitSections(text);
+  for (const name of ["チーム情報", "基本戦術", "スターティングメンバー", "状況別指示", "切り札"]) {
+    if (!sec[name]) errors.push(`必須セクション「## ${name}」がありません`);
+  }
+  if (errors.length) return { strategy: null, errors };
+
+  const info = parseKeyValues(sec["チーム情報"]);
+  const manager = info["監督名"] || "";
+  if (!manager) errors.push("チーム情報: 監督名がありません");
+  const teamKey = Object.keys(TEAMS_DATA).find((k) => TEAMS_DATA[k].name === info["使用チーム"]);
+  if (!teamKey) errors.push(`チーム情報: 使用チーム「${info["使用チーム"] || ""}」が不正です`);
+
+  const tacticsKv = parseKeyValues(sec["基本戦術"]);
+  const groups = parseCheckboxGroups(sec["基本戦術"]);
+  const formation = tacticsKv["フォーメーション"];
+  if (!FORMATIONS[formation]) errors.push(`基本戦術: フォーメーション「${formation || ""}」が不正です`);
+  // チェックボックス形式（アプリが生成する形）を優先し、無ければ「キー: 値」形式にフォールバック
+  const attack = pickTactic(groups, tacticsKv, "攻撃スタイル", ATTACK_STYLES, errors, "基本戦術");
+  const defense = pickTactic(groups, tacticsKv, "守備スタイル", DEFENSE_STYLES, errors, "基本戦術");
+  const line = pickTactic(groups, tacticsKv, "ライン設定", LINES, errors, "基本戦術");
+  const tempo = pickTactic(groups, tacticsKv, "テンポ", TEMPOS, errors, "基本戦術");
+
+  let starters = null;
+  if (teamKey && FORMATIONS[formation]) {
+    const team = TEAMS_DATA[teamKey];
+    const kv = parseKeyValues(sec["スターティングメンバー"]);
+    starters = {};
+    const need = { GK: 1, ...FORMATIONS[formation] };
+    const seen = new Set();
+    for (const pos of POS_ORDER) {
+      const names = (kv[pos] || "").split(/[,、]/).map((s) => s.trim()).filter(Boolean);
+      starters[pos] = names;
+      if (names.length !== need[pos]) {
+        errors.push(`スタメン: ${pos} は ${need[pos]}人必要ですが ${names.length}人です（${formation}）`);
+      }
+      for (const n of names) {
+        const p = team.players.find((x) => x.name === n);
+        if (!p) errors.push(`スタメン: 「${n}」は${team.name}のロスターにいません`);
+        else if (p.pos !== pos) errors.push(`スタメン: ${n} は ${p.pos} 登録です（${pos} 欄に書けません）`);
+        if (seen.has(n)) errors.push(`スタメン: 「${n}」が重複しています`);
+        seen.add(n);
+      }
+    }
+  }
+
+  const rules = parseIfRules(sec["状況別指示"], errors, "状況別指示");
+  if (rules.length > 3) errors.push(`状況別指示は3つまでです（${rules.length}個あります）`);
+
+  const trumpGroups = parseCheckboxGroups(sec["切り札"]);
+  const trumpKv = parseKeyValues(sec["切り札"]);
+  const trumpType = pickTactic(trumpGroups, trumpKv, "種類", TRUMPS, errors, "切り札");
+  const trumpConds = parseCondExpr(trumpKv["発動条件"] || "", errors, "切り札");
+  let trumpPlayer = trumpKv["指名選手"] || "";
+  if (trumpType === "スーパーサブ") {
+    if (!trumpPlayer) errors.push("切り札: スーパーサブには指名選手が必要です");
+    else if (teamKey && starters) {
+      const starterSet = new Set(Object.values(starters).flat());
+      const p = TEAMS_DATA[teamKey].players.find((x) => x.name === trumpPlayer);
+      if (!p) errors.push(`切り札: 指名選手「${trumpPlayer}」はロスターにいません`);
+      else if (starterSet.has(trumpPlayer)) errors.push(`切り札: 指名選手「${trumpPlayer}」はスタメンです（ベンチから選ぶこと）`);
+    }
+  }
+
+  if (errors.length) return { strategy: null, errors };
+  return {
+    strategy: {
+      manager, teamKey, formation,
+      tactics: { attack, defense, line, tempo },
+      starters, rules,
+      trump: { type: trumpType, conds: trumpConds, player: trumpPlayer },
+    },
+    errors: [],
+  };
+}
+
+// ---- ハーフタイム指示ファイル ----
+
+// 試合状態からHT指示ファイルのひな形を生成する
+function buildHalftimeMd(ts, score) {
+  const onPitch = ts.players.filter((p) => p.onPitch);
+  const bench = ts.players.filter((p) => !p.onPitch && !p.subbedOut);
+  const fmt = (p) => `${p.name}(${p.pos} 疲労${Math.round(p.fatigue)} ${p.cond} 評価${p.rating.toFixed(1)})`;
+  return `# ハーフタイム指示ファイル — ${ts.strategy.manager}（${ts.team.name}）
+
+<!--
+  前半終了 ${score}。
+  セクションはすべて任意。書いたものだけが適用されます。提出しなくても構いません。
+  出場中: ${onPitch.map(fmt).join(", ")}
+  ベンチ: ${bench.map(fmt).join(", ")}
+-->
+
+## 選手交代
+
+<!-- 最大3人。書式: - OUT: 選手名 → IN: 選手名
+     交代後の11人が(変更後の)フォーメーションの人数構成と一致していること -->
+
+## 戦術変更
+
+<!-- 変更したい項目だけ残す。フォーメーション変更時は交代で人数構成を合わせること
+フォーメーション: 4-4-2
+攻撃スタイル: カウンター
+守備スタイル: リトリート
+ライン設定: 低い
+テンポ: 遅い
+-->
+
+## 状況別指示
+
+<!-- このセクションに1つでも書くと、前半の指示は破棄され置き換わります（最大3つ） -->
+
+## 切り札
+
+<!-- 前半に未使用の場合のみ変更できます
+種類: パワープレー
+発動条件: IF 終盤 AND ビハインド
+指名選手:
+-->
+`;
+}
+
+// HT指示ファイルをパースして {ht, errors} を返す（検証は試合状態に依存する分のみ後段）
+function parseHalftimeMd(text) {
+  const errors = [];
+  const sec = splitSections(text);
+  const ht = { subs: [], tactics: {}, rules: null, trump: null };
+
+  if (sec["選手交代"]) {
+    for (const raw of sec["選手交代"]) {
+      const line = normalizeLine(raw);
+      const m = line.match(/^-\s*OUT:\s*(.+?)\s*→\s*IN:\s*(.+?)\s*$/);
+      if (m) ht.subs.push({ out: m[1].trim(), in: m[2].trim() });
+      else if (line.startsWith("-")) errors.push(`選手交代: 書式が不正「${line}」`);
+    }
+    if (ht.subs.length > 3) errors.push(`選手交代は3人までです（${ht.subs.length}人）`);
+  }
+
+  if (sec["戦術変更"]) {
+    const kv = parseKeyValues(sec["戦術変更"]);
+    const valid = { "フォーメーション": Object.keys(FORMATIONS), "攻撃スタイル": ATTACK_STYLES,
+      "守備スタイル": DEFENSE_STYLES, "ライン設定": LINES, "テンポ": TEMPOS };
+    for (const [k, v] of Object.entries(kv)) {
+      if (!valid[k]) { errors.push(`戦術変更: 変更できない項目「${k}」`); continue; }
+      if (!valid[k].includes(v)) { errors.push(`戦術変更: 「${k}」に無い値「${v}」`); continue; }
+      ht.tactics[k] = v;
+    }
+  }
+
+  if (sec["状況別指示"]) {
+    const rules = parseIfRules(sec["状況別指示"], errors, "状況別指示");
+    if (rules.length > 3) errors.push("状況別指示は3つまでです");
+    if (rules.length > 0) ht.rules = rules;
+  }
+
+  if (sec["切り札"]) {
+    const kv = parseKeyValues(sec["切り札"]);
+    if (kv["種類"]) {
+      if (!TRUMPS.includes(kv["種類"])) errors.push(`切り札: 無い種類「${kv["種類"]}」`);
+      else ht.trump = {
+        type: kv["種類"],
+        conds: parseCondExpr(kv["発動条件"] || "", errors, "切り札"),
+        player: kv["指名選手"] || "",
+      };
+    }
+  }
+
+  return { ht, errors };
+}
+
+</script>
+<script>
+// 試合シミュレーションエンジン
+// 1ティック = 試合内2分。前半23 + 後半23 + アディショナルタイム
+
+const S = { SPEED: 0, PASS: 1, DRIBBLE: 2, SHOOT: 3, DEF: 4, AERIAL: 5, STAMINA: 6, MENTAL: 7 };
+
+const CONDS = [
+  { name: "絶好調", mult: 1.08, p: 0.10, icon: "☀" },
+  { name: "好調", mult: 1.04, p: 0.25, icon: "🙂" },
+  { name: "普通", mult: 1.00, p: 0.40, icon: "" },
+  { name: "不調", mult: 0.96, p: 0.20, icon: "😐" },
+  { name: "絶不調", mult: 0.92, p: 0.05, icon: "🌧" },
+];
+
+// 相性マトリクス [攻撃スタイル][守備スタイル] → チャンス確率補正
+const MATRIX = {
+  "ポゼッション": { "ハイプレス": -0.10, "ゾーン": 0, "リトリート": 0.10, "マンマーク": 0.10 },
+  "カウンター": { "ハイプレス": 0.15, "ゾーン": 0, "リトリート": -0.10, "マンマーク": 0 },
+  "サイドアタック": { "ハイプレス": 0, "ゾーン": 0.10, "リトリート": 0, "マンマーク": -0.10 },
+  "ロングボール": { "ハイプレス": 0.10, "ゾーン": -0.10, "リトリート": 0, "マンマーク": 0 },
+};
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+class TeamState {
+  constructor(strategy, rng) {
+    this.strategy = strategy;
+    this.team = TEAMS_DATA[strategy.teamKey];
+    this.formation = strategy.formation;
+    this.base = { ...strategy.tactics };   // 基本戦術（HTで書き換わる）
+    this.rules = strategy.rules;
+    this.trump = { ...strategy.trump, used: false, activeUntil: -1, afterUntil: -1, subPlayer: null };
+    this.subsLeft = 3;
+    this.stats = { shots: 0, chances: 0, goals: 0, possession: 0 };
+    const starterSet = new Set(Object.values(strategy.starters).flat());
+    this.players = this.team.players.map((p) => {
+      const roll = rng();
+      let acc = 0, cond = CONDS[2];
+      for (const c of CONDS) { acc += c.p; if (roll < acc) { cond = c; break; } }
+      return {
+        name: p.name, pos: p.pos, stats: p.stats,
+        cond: cond.name, condIcon: cond.icon, condMult: cond.mult,
+        fatigue: 0, rating: 6.0, onPitch: starterSet.has(p.name), subbedOut: false,
+      };
+    });
+  }
+
+  onPitch(pos) {
+    return this.players.filter((p) => p.onPitch && (!pos || p.pos === pos));
+  }
+
+  eff(p, i) { // コンディション・疲労込みの実効能力
+    let m = p.condMult;
+    if (p.fatigue >= 90) m *= 0.8; else if (p.fatigue >= 70) m *= 0.9;
+    return p.stats[i] * m;
+  }
+
+  avg(players, fn) {
+    if (players.length === 0) return 0;
+    return players.reduce((a, p) => a + fn(p), 0) / players.length;
+  }
+
+  // チーム値（1〜10スケール）を出場11人から導出
+  values() {
+    const fw = this.onPitch("FW"), mf = this.onPitch("MF"), df = this.onPitch("DF");
+    const gk = this.onPitch("GK")[0];
+    const all = this.onPitch();
+    const atkOf = (p) => this.eff(p, S.SHOOT) * 0.5 + this.eff(p, S.DRIBBLE) * 0.3 + this.eff(p, S.PASS) * 0.2;
+    return {
+      attack: (this.avg(fw, atkOf) * 0.65 + this.avg(mf, atkOf) * 0.35) / 10,
+      defense: (this.avg(df, (p) => this.eff(p, S.DEF) * 0.6 + this.eff(p, S.AERIAL) * 0.4) * 0.6
+        + (gk ? this.eff(gk, S.DEF) : 60) * 0.25
+        + this.avg(mf, (p) => this.eff(p, S.DEF)) * 0.15) / 10,
+      technique: this.avg(mf, (p) => this.eff(p, S.PASS) * 0.6 + this.eff(p, S.DRIBBLE) * 0.4) / 10,
+      aerial: (this.avg(fw, (p) => this.eff(p, S.AERIAL)) * 0.6 + this.avg(df, (p) => this.eff(p, S.AERIAL)) * 0.4) / 10,
+      speed: this.avg(all, (p) => this.eff(p, S.SPEED)) / 10,
+      stamina: this.avg(all, (p) => this.eff(p, S.STAMINA)) / 10,
+      mental: this.avg(all, (p) => this.eff(p, S.MENTAL)) / 10,
+    };
+  }
+
+  avgFatigue() { return this.avg(this.onPitch(), (p) => p.fatigue); }
+}
+
+class Match {
+  constructor(stratA, stratB, seed) {
+    this.seed = seed >>> 0;
+    this.rng = mulberry32(this.seed);
+    this.a = new TeamState(stratA, this.rng);
+    this.b = new TeamState(stratB, this.rng);
+    this.score = [0, 0];
+    this.half = 1;
+    this.tick = 0;
+    this.fhTicks = 23 + (this.rng() < 0.5 ? 1 : 0);       // 前半 45分+ロスタイム
+    this.shTicks = 23 + 1 + Math.floor(this.rng() * 2);   // 後半 45分+ロスタイム1〜3
+    this.finished = false;
+    this.atHalftime = false;
+    this.events = [];
+  }
+
+  teams() { return [this.a, this.b]; }
+  other(ts) { return ts === this.a ? this.b : this.a; }
+  idx(ts) { return ts === this.a ? 0 : 1; }
+
+  minute() {
+    if (this.half === 1) return Math.min((this.tick + 1) * 2, 45);
+    return Math.min(45 + (this.tick - this.fhTicks + 1) * 2, 90);
+  }
+  minuteLabel() {
+    const base = this.half === 1 ? this.fhTicks : this.fhTicks + this.shTicks;
+    const over = this.half === 1 ? this.tick - 22 : this.tick - this.fhTicks - 22;
+    if (over > 0) return this.half === 1 ? `前半 45+${over}分` : `後半 90+${over}分`;
+    return this.half === 1 ? `前半 ${String(this.minute()).padStart(2, "0")}分`
+      : `後半 ${String(this.minute()).padStart(2, "0")}分`;
+  }
+
+  scoreDiff(ts) { return this.score[this.idx(ts)] - this.score[1 - this.idx(ts)]; }
+
+  condMet(ts, cond) {
+    const d = this.scoreDiff(ts);
+    switch (cond) {
+      case "前半": return this.half === 1;
+      case "後半": return this.half === 2;
+      case "終盤": return this.half === 2 && this.minute() >= 70;
+      case "リード": return d > 0;
+      case "同点": return d === 0;
+      case "ビハインド": return d < 0;
+      case "2点差リード": return d >= 2;
+      case "2点差ビハインド": return d <= -2;
+      case "主力疲労": return ts.avgFatigue() >= 60;
+      default: return false;
+    }
+  }
+
+  // 状況別指示を適用した現在の戦術
+  activeTactics(ts) {
+    const t = { ...ts.base };
+    const applied = [];
+    for (const rule of ts.rules) {
+      if (rule.conds.every((c) => this.condMet(ts, c))) {
+        const map = { "攻撃スタイル": "attack", "守備スタイル": "defense", "ライン設定": "line", "テンポ": "tempo" };
+        for (const [k, v] of Object.entries(rule.changes)) t[map[k]] = v;
+        applied.push(rule);
+      }
+    }
+    return { tactics: t, applied };
+  }
+
+  log(text, kind = "play") {
+    this.events.push({ kind, minute: this.minuteLabel(), text });
+  }
+
+  weightedPick(players, weightFn) {
+    const ws = players.map(weightFn);
+    const total = ws.reduce((a, b) => a + b, 0);
+    let r = this.rng() * total;
+    for (let i = 0; i < players.length; i++) { r -= ws[i]; if (r <= 0) return players[i]; }
+    return players[players.length - 1];
+  }
+
+  // 切り札の発動チェックと効果値
+  checkTrump(ts) {
+    const tr = ts.trump;
+    if (tr.used || !tr.conds || tr.conds.length === 0) return;
+    if (!tr.conds.every((c) => this.condMet(ts, c))) return;
+    if (tr.type === "パワープレー" && this.minute() < 80) return;
+    tr.used = true;
+    const min = this.minute();
+    if (tr.type === "スーパーサブ") {
+      const sub = ts.players.find((p) => p.name === tr.player && !p.onPitch && !p.subbedOut);
+      if (!sub) { this.log(`${ts.team.name}、切り札スーパーサブは不発（${tr.player}は投入できない）`, "info"); return; }
+      const samePos = ts.onPitch(sub.pos);
+      const out = samePos.sort((x, y) => y.fatigue - x.fatigue)[0];
+      out.onPitch = false; out.subbedOut = true; sub.onPitch = true;
+      tr.subPlayer = sub;
+      tr.activeUntil = min + 15;
+      this.log(`📢 ${ts.team.name}、切り札「スーパーサブ」発動！ ${out.name} に代えて ${sub.name} を投入！`, "trump");
+    } else if (tr.type === "ギアチェンジ") {
+      tr.activeUntil = min + 10; tr.afterUntil = min + 15;
+      this.log(`📢 ${ts.team.name}、切り札「ギアチェンジ」発動！ 一気にギアを上げる！`, "trump");
+    } else if (tr.type === "鉄壁モード") {
+      tr.activeUntil = min + 15;
+      this.log(`📢 ${ts.team.name}、切り札「鉄壁モード」発動！ 全員がペナルティエリアを固める！`, "trump");
+    } else if (tr.type === "パワープレー") {
+      tr.activeUntil = 999;
+      this.log(`📢 ${ts.team.name}、切り札「パワープレー」発動！ GKも上がる総攻撃だ！`, "trump");
+    }
+  }
+
+  trumpActive(ts, type) {
+    const tr = ts.trump;
+    return tr.used && tr.type === type && this.minute() <= tr.activeUntil;
+  }
+
+  // 1ティックを進める。発生イベントは this.events に積まれる
+  step() {
+    if (this.finished || this.atHalftime) return;
+    const min = this.minute();
+
+    for (const ts of this.teams()) {
+      const before = this.activeTactics(ts).applied.length;
+      this.checkTrump(ts);
+      ts._ruleCount = ts._ruleCount ?? 0;
+      const nowApplied = this.activeTactics(ts).applied.length;
+      if (nowApplied > ts._ruleCount) this.log(`${ts.team.name}のベンチが動いた！ 指示が飛ぶ`, "info");
+      ts._ruleCount = nowApplied;
+    }
+
+    const va = this.a.values(), vb = this.b.values();
+    const ta = this.activeTactics(this.a).tactics, tb = this.activeTactics(this.b).tactics;
+
+    // 1. 支配権判定
+    const midScore = (ts, v, t) => {
+      let s = v.technique * 2 + FORMATIONS[ts.formation].mid;
+      s += t.tempo === "速い" ? 1 : t.tempo === "遅い" ? -1 : 0;
+      const f = ts.avgFatigue();
+      s += f >= 75 ? -4 : f >= 60 ? -2 : 0;
+      if (this.trumpActive(ts, "ギアチェンジ")) s += 5;
+      else if (ts.trump.used && ts.trump.type === "ギアチェンジ" && this.minute() <= ts.trump.afterUntil) s -= 3;
+      return s + this.rng() * 10;
+    };
+    const atkSide = midScore(this.a, va, ta) >= midScore(this.b, vb, tb) ? this.a : this.b;
+    const defSide = this.other(atkSide);
+    atkSide.stats.possession++;
+    const av = atkSide === this.a ? va : vb, dv = atkSide === this.a ? vb : va;
+    const at = atkSide === this.a ? ta : tb, dt = atkSide === this.a ? tb : ta;
+
+    // 2. チャンス生成判定
+    const cp = this.chanceProb(atkSide, defSide, av, dv, at, dt);
+    const seq = [];
+    let goal = false;
+    if (this.rng() < cp) {
+      const r = this.resolveChance(atkSide, defSide, av, dv, at, dt);
+      goal = r.goal;
+      seq.push({ side: this.idx(atkSide), phase: r.outcome, shooter: r.shooter, assister: r.assister });
+    } else {
+      if (this.rng() < 0.18) this.flavor(atkSide, defSide, at);
+      seq.push({ side: this.idx(atkSide), phase: "possession" });
+    }
+
+    // 2b. 速攻判定: カウンター/ロングボールのチームは、相手の攻撃を凌いだ流れから
+    //     ボール保持に関係なく速攻チャンスを得られる（通常の40%の確率）
+    if (!goal && (dt.attack === "カウンター" || dt.attack === "ロングボール")) {
+      const cp2 = this.chanceProb(defSide, atkSide, dv, av, dt, at) * 0.4;
+      if (this.rng() < cp2) {
+        const r2 = this.resolveChance(defSide, atkSide, dv, av, dt, at);
+        if (r2.goal) goal = true;
+        seq.push({ side: this.idx(defSide), phase: r2.outcome, shooter: r2.shooter, assister: r2.assister });
+      }
+    }
+    // アニメーション用: このティックで何が起きたか
+    this.tickAnim = { seq, goal: seq.some((e) => e.phase === "goal") };
+
+    // 疲労蓄積
+    for (const ts of this.teams()) {
+      const t = ts === this.a ? ta : tb;
+      for (const p of ts.onPitch()) {
+        let f;
+        if (p.pos === "GK") f = 0.3;
+        else {
+          f = 1.5 + (t.tempo === "速い" ? 0.5 : t.tempo === "遅い" ? -0.3 : 0)
+            + (t.defense === "ハイプレス" ? 0.5 : 0);
+          f *= 1 - p.stats[S.STAMINA] * 0.004;
+          if (ts.trump.subPlayer === p && this.minute() > ts.trump.activeUntil) f *= 2;
+        }
+        p.fatigue = Math.min(100, p.fatigue + Math.max(0.3, f));
+      }
+    }
+
+    this.tick++;
+    if (this.half === 1 && this.tick >= this.fhTicks) {
+      this.atHalftime = true;
+      this.log(`🕐 前半終了 ${this.scoreStr()}`, "section");
+    } else if (this.half === 2 && this.tick >= this.fhTicks + this.shTicks) {
+      this.finished = true;
+      this.log(`🏁 試合終了 ${this.scoreStr()}`, "section");
+    }
+  }
+
+  chanceProb(atkSide, defSide, av, dv, at, dt) {
+    let cp = 0.20 + (av.attack - dv.defense) * 0.015;
+    cp += MATRIX[at.attack][dt.defense];
+    cp += FORMATIONS[atkSide.formation].chance + FORMATIONS[defSide.formation].concede;
+    // スタイル適性
+    if (at.attack === "ポゼッション") cp += (av.technique - 6) * 0.02;
+    if (at.attack === "カウンター") cp += (av.speed - 6) * 0.02;
+    if (at.attack === "サイドアタック") cp += (av.aerial - 6) * 0.02;
+    if (at.attack === "ロングボール") cp += (av.aerial - 6) * 0.015;
+    if (dt.defense === "ハイプレス") cp -= (dv.stamina - 6) * 0.015;
+    // ライン設定
+    if (at.line === "高い") cp += 0.03;
+    if (at.line === "低い") cp -= 0.03;
+    if (dt.line === "低い") cp -= 0.03;
+    if (dt.line === "高い" && (at.attack === "カウンター" || at.attack === "ロングボール")) cp += 0.05;
+    if (dt.line === "高い" && av.speed >= 8) cp += 0.03;
+    // メンタル（ビハインド時の粘り）
+    if (this.scoreDiff(atkSide) < 0 && av.mental >= 8) cp += 0.03;
+    // 切り札
+    if (this.trumpActive(atkSide, "スーパーサブ")) cp += 0.08;
+    if (this.trumpActive(atkSide, "パワープレー")) cp += 0.12;
+    if (this.trumpActive(atkSide, "鉄壁モード")) cp -= 0.05;
+    if (this.trumpActive(defSide, "鉄壁モード")) cp -= 0.08;
+    return Math.max(0.05, Math.min(0.45, cp));
+  }
+
+  // 決定機を解決する。{goal, outcome, shooter, assister} を返す
+  resolveChance(atk, def, av, dv, at, dt) {
+    atk.stats.chances++;
+    atk.stats.shots++;
+    const shooters = atk.onPitch("FW").concat(atk.onPitch("MF"));
+    const shooter = this.weightedPick(shooters, (p) => (p.pos === "FW" ? 3 : 1) * (atk.eff(p, S.SHOOT) + atk.eff(p, S.DRIBBLE)));
+    const others = atk.onPitch().filter((p) => p !== shooter && p.pos !== "GK");
+    const assister = this.weightedPick(others, (p) => atk.eff(p, S.PASS));
+    const gk = def.onPitch("GK")[0];
+
+    let gp = 0.25 + (av.attack - dv.defense) * 0.01;
+    const min = this.minute();
+    if (min >= 70 && this.scoreDiff(def) > 0 && dv.mental <= 4) gp += 0.05;
+    if (def.avgFatigue() >= 70) gp += 0.05;
+    if (this.trumpActive(def, "パワープレー") && at.attack === "カウンター") gp += 0.10;
+    gp = Math.max(0.10, Math.min(0.50, gp));
+
+    shooter.rating += 0.15;
+    assister.rating += 0.1;
+
+    const style = at.attack;
+    const buildup = {
+      "ポゼッション": `${assister.name}が崩しの縦パス、${shooter.name}が抜け出した！`,
+      "カウンター": `奪って一気にカウンター！ ${assister.name}のスルーパスに${shooter.name}が走る！`,
+      "サイドアタック": `${assister.name}のクロスに${shooter.name}が飛び込む！`,
+      "ロングボール": `${assister.name}のロングボール、${shooter.name}が競り勝った！`,
+    }[style];
+
+    if (this.rng() < gp) {
+      this.score[this.idx(atk)]++;
+      atk.stats.goals++;
+      shooter.rating += 1.0;
+      assister.rating += 0.5;
+      if (gk) gk.rating -= 0.3;
+      const dfs = def.onPitch("DF");
+      if (dfs.length) this.weightedPick(dfs, () => 1).rating -= 0.3;
+      this.log(`${buildup}`, "play");
+      this.log(`⚽ ゴーーール！！ ${atk.team.name}、${shooter.name}が決めた！ ${this.scoreStr()}`, "goal");
+      return { goal: true, outcome: "goal", shooter: shooter.name, assister: assister.name };
+    }
+    const r = this.rng();
+    let endText, outcome;
+    if (r < 0.45 && gk) { endText = `シュート！ …GK${gk.name}がセーブ！`; gk.rating += 0.4; outcome = "save"; }
+    else if (r < 0.6) { endText = `シュートは無情にもポスト直撃！`; outcome = "post"; }
+    else { endText = `シュート！ …わずかに枠の外！`; outcome = "miss"; }
+    this.log(`${atk.team.name}、決定機！ ${buildup} ${endText}`, "chance");
+    return { goal: false, outcome, shooter: shooter.name, assister: assister.name };
+  }
+
+  flavor(atk, def, at) {
+    const pool = [
+      `${atk.team.name}がボールを支配し、じわじわと敵陣に迫る`,
+      `${def.team.name}、集中した守備でシュートを打たせない`,
+      `${atk.team.name}が押し込むが、最後のところで崩せない`,
+      `🟨 ${def.team.name}、たまらずファウルで止める`,
+      `両チーム、中盤で激しい潰し合いが続く`,
+    ];
+    this.log(pool[Math.floor(this.rng() * pool.length)], "play");
+  }
+
+  scoreStr() {
+    return `${this.a.team.name} ${this.score[0]} - ${this.score[1]} ${this.b.team.name}`;
+  }
+
+  // HT指示の適用。errors を返す（交代＋フォーメーションは一体で検証し、違反なら適用しない）
+  applyHalftime(ts, ht) {
+    const errors = [];
+    const applied = [];
+    // 交代とフォーメーション変更: 交代後の11人が(変更後の)フォーメーション構成と
+    // 一致するかを先に検証し、問題がなければまとめて確定する
+    const targetFormation = ht.tactics["フォーメーション"] || ts.formation;
+    const subErrors = [];
+    const outs = [], ins = [];
+    if (ht.subs.length > ts.subsLeft) subErrors.push(`交代枠が足りません（残り${ts.subsLeft}）`);
+    for (const s of ht.subs) {
+      const out = ts.players.find((p) => p.name === s.out && p.onPitch);
+      const inn = ts.players.find((p) => p.name === s.in && !p.onPitch && !p.subbedOut);
+      if (!out) subErrors.push(`交代: ${s.out} は出場していません`);
+      if (!inn) subErrors.push(`交代: ${s.in} は投入できません（ベンチにいない）`);
+      if (out && outs.includes(out)) subErrors.push(`交代: ${s.out} が重複しています`);
+      if (inn && ins.includes(inn)) subErrors.push(`交代: ${s.in} が重複しています`);
+      if (out && inn) { outs.push(out); ins.push(inn); }
+    }
+    if (subErrors.length === 0) {
+      const newXI = ts.onPitch().filter((p) => !outs.includes(p)).concat(ins);
+      const need = { GK: 1, ...FORMATIONS[targetFormation] };
+      for (const pos of POS_ORDER) {
+        const n = newXI.filter((p) => p.pos === pos).length;
+        if (n !== need[pos]) subErrors.push(`交代後の構成が${targetFormation}と一致しません（${pos} ${n}/${need[pos]}人）`);
+      }
+    }
+    if (subErrors.length) {
+      errors.push(...subErrors, "→ 選手交代・フォーメーション変更は適用されませんでした");
+    } else {
+      for (let i = 0; i < outs.length; i++) {
+        outs[i].onPitch = false; outs[i].subbedOut = true; ins[i].onPitch = true;
+        ts.subsLeft--;
+        applied.push(`交代 ${outs[i].name} → ${ins[i].name}`);
+      }
+      if (targetFormation !== ts.formation) {
+        ts.formation = targetFormation;
+        applied.push(`フォーメーション → ${targetFormation}`);
+      }
+    }
+    // 戦術変更（フォーメーション以外）
+    const map = { "攻撃スタイル": "attack", "守備スタイル": "defense", "ライン設定": "line", "テンポ": "tempo" };
+    for (const [k, v] of Object.entries(ht.tactics)) {
+      if (k === "フォーメーション") continue;
+      ts.base[map[k]] = v;
+      applied.push(`${k} → ${v}`);
+    }
+    // 状況別指示
+    if (ht.rules) { ts.rules = ht.rules; applied.push("状況別指示を書き換え"); }
+    // 切り札
+    if (ht.trump) {
+      if (ts.trump.used) errors.push("切り札は発動済みのため変更できません（無視されます）");
+      else {
+        if (ht.trump.type === "スーパーサブ") {
+          const p = ts.players.find((x) => x.name === ht.trump.player && !x.onPitch && !x.subbedOut);
+          if (!p) { errors.push(`切り札: 指名選手「${ht.trump.player}」はベンチにいません`); }
+          else { ts.trump = { ...ht.trump, used: false, activeUntil: -1, afterUntil: -1, subPlayer: null }; applied.push(`切り札 → ${ht.trump.type}`); }
+        } else {
+          ts.trump = { ...ht.trump, used: false, activeUntil: -1, afterUntil: -1, subPlayer: null };
+          applied.push(`切り札 → ${ht.trump.type}`);
+        }
+      }
+    }
+    if (applied.length) this.log(`${ts.team.name}ベンチが動く：${applied.join("、")}`, "info");
+    return errors;
+  }
+
+  startSecondHalf() {
+    this.atHalftime = false;
+    this.half = 2;
+    for (const ts of this.teams()) ts._ruleCount = 0;
+    this.log(`⚽ 後半キックオフ！ ${this.scoreStr()}`, "section");
+  }
+
+  result() {
+    const total = this.a.stats.possession + this.b.stats.possession || 1;
+    const all = this.teams().flatMap((ts) => ts.players.filter((p) => p.onPitch || p.subbedOut)
+      .map((p) => ({ ...p, teamName: ts.team.name })));
+    const mvp = all.reduce((a, b) => (b.rating > a.rating ? b : a));
+    return {
+      score: this.score,
+      possession: [Math.round((this.a.stats.possession / total) * 100),
+        Math.round((this.b.stats.possession / total) * 100)],
+      stats: [this.a.stats, this.b.stats],
+      mvp,
+      seed: this.seed,
+    };
+  }
+}
+
+</script>
+<script>
+// 2Dピッチ描画。試合の各ティック（2分）を、陣形を保った選手たちが
+// パスを回し攻め上がってシュートするアニメーションとして再生する。
+
+// チームのキット色（primary=ユニフォーム, alt=対戦相手と被ったとき用）
+const TEAM_KIT = {
+  japan: { primary: "#12409e", alt: "#ffffff" },
+  spain: { primary: "#c60b1e", alt: "#f6c700" },
+  brazil: { primary: "#f7d117", alt: "#1c9b4b" },
+  england: { primary: "#eef1f5", alt: "#cf142b" },
+  germany: { primary: "#1a1a1a", alt: "#ffffff" },
+  italy: { primary: "#2aa0e6", alt: "#ffffff" },
+  france: { primary: "#1a2a8a", alt: "#ffffff" },
+  argentina: { primary: "#7cb6e6", alt: "#0b3b8f" },
+  netherlands: { primary: "#f36c21", alt: "#ffffff" },
+  portugal: { primary: "#0a6b34", alt: "#c8102e" },
+};
+const DEFAULT_KIT = { primary: "#888888", alt: "#ffffff" };
+
+const M = 0.045;                 // ピッチ外周マージン（正規化）
+const GOAL_HALF = 0.09;          // ゴール幅の半分
+const DEPTH = { GK: 0.05, DF: 0.24, MF: 0.48, FW: 0.70 }; // 自ゴールからの深さ
+
+function hexToRgb(h) {
+  const s = h.replace("#", "");
+  return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+}
+function colorDist(a, b) {
+  const x = hexToRgb(a), y = hexToRgb(b);
+  return Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) + Math.abs(x[2] - y[2]);
+}
+function textColor(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#111" : "#fff";
+}
+function resolveKits(keyA, keyB) {
+  const A = TEAM_KIT[keyA] || DEFAULT_KIT, B = TEAM_KIT[keyB] || DEFAULT_KIT;
+  let cA = A.primary, cB = B.primary;
+  if (colorDist(cA, cB) < 130) cB = B.alt;
+  if (colorDist(cA, cB) < 130) cB = "#ffffff";
+  return [{ fill: cA, text: textColor(cA) }, { fill: cB, text: textColor(cB) }];
+}
+
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+class Pitch {
+  constructor(canvas, match) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.match = match;
+    this.kits = resolveKits(match.a.strategy.teamKey, match.b.strategy.teamKey);
+    this.ball = { x: 0.5, y: 0.5 };
+    this.stopped = false;
+    // 選手ごとの微揺れ位相（見た目を生かす）
+    this.phase = Array.from({ length: 44 }, (_, i) => i * 1.7);
+    this.resize();
+    this._onResize = () => { this.resize(); this.drawStatic(); };
+    window.addEventListener("resize", this._onResize);
+    this.drawStatic();
+  }
+
+  stop() {
+    this.stopped = true;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    window.removeEventListener("resize", this._onResize);
+  }
+
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.clientWidth || 640;
+    const h = Math.round(w * 0.62);
+    this.canvas.style.height = h + "px";
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.W = w; this.H = h;
+  }
+
+  // 正規化座標 → ピクセル
+  px(nx, ny) { return [nx * this.W, ny * this.H]; }
+  // side=0は左ゴール守備・右攻撃、side=1はその逆
+  depthX(side, depth) {
+    const inner = 1 - 2 * M;
+    return side === 0 ? M + depth * inner : (1 - M) - depth * inner;
+  }
+  latY(lat) { return M + lat * (1 - 2 * M); }
+  attackGoalX(side) { return side === 0 ? 1 - M : M; }
+
+  // 出場中の選手を陣形スロットに割り当て {num,name,pos,base:{x,y},fatigue,cond}
+  layout(ts, side) {
+    const groups = { GK: ts.onPitch("GK"), DF: ts.onPitch("DF"), MF: ts.onPitch("MF"), FW: ts.onPitch("FW") };
+    const out = [];
+    let num = 1;
+    for (const pos of POS_ORDER) {
+      const players = groups[pos];
+      const n = players.length;
+      players.forEach((p, i) => {
+        const lat = (i + 1) / (n + 1);
+        out.push({
+          num: num++, name: p.name, pos, player: p,
+          base: { x: this.depthX(side, DEPTH[pos]), y: this.latY(lat) },
+          fatigue: p.fatigue,
+        });
+      });
+    }
+    return out;
+  }
+
+  findSlot(slots, name) { return slots.find((s) => s.name === name); }
+
+  // シュートの着弾点
+  shotTarget(side, phase, defGK) {
+    const gx = this.attackGoalX(side);
+    if (phase === "save") return { x: lerp(gx, 0.5, 0.04), y: defGK ? defGK.base.y : 0.5 };
+    if (phase === "goal") {
+      const gy = 0.5 + (this.match.rng() - 0.5) * 0.11;
+      return { x: side === 0 ? 1 - M * 0.4 : M * 0.4, y: gy };
+    }
+    // miss / post: 枠の外（横）か上
+    const wide = 0.5 + (this.match.rng() < 0.5 ? -1 : 1) * (GOAL_HALF + 0.03);
+    return { x: gx, y: wide };
+  }
+
+  // アニメの区切り（ボールの経由点列）を作る
+  buildPoints(anim, slotsA, slotsB) {
+    const pts = [{ x: this.ball.x, y: this.ball.y, w: 0.6 }];
+    this.shot = null;
+    for (const e of anim.seq) {
+      const atk = e.side === 0 ? slotsA : slotsB;
+      const def = e.side === 0 ? slotsB : slotsA;
+      const mids = atk.filter((s) => s.pos === "MF");
+      const backs = atk.filter((s) => s.pos === "DF");
+      const pool = (mids.length ? mids : atk).concat(backs);
+      // ビルドアップ：2人経由
+      for (let k = 0; k < 2; k++) {
+        const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
+        pts.push({ x: s.base.x, y: s.base.y, w: 1 });
+      }
+      if (["goal", "save", "miss", "post"].includes(e.phase)) {
+        const shooter = (e.shooter && this.findSlot(atk, e.shooter))
+          || atk.filter((s) => s.pos === "FW")[0] || atk[atk.length - 1];
+        pts.push({ x: shooter.base.x, y: shooter.base.y, w: 1 });
+        const gk = def.find((s) => s.pos === "GK");
+        const tgt = this.shotTarget(e.side, e.phase, gk);
+        pts.push({ x: tgt.x, y: tgt.y, w: 0.55, shot: true });
+        this.shot = { defSide: 1 - e.side, phase: e.phase, targetY: tgt.y, gk };
+      } else {
+        const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
+        pts.push({ x: s.base.x, y: s.base.y, w: 1 });
+      }
+    }
+    return pts;
+  }
+
+  ballAt(pts, p) {
+    const total = pts.slice(1).reduce((a, s) => a + s.w, 0) || 1;
+    let acc = 0;
+    const target = p * total;
+    for (let i = 1; i < pts.length; i++) {
+      const seg = pts[i].w;
+      if (target <= acc + seg || i === pts.length - 1) {
+        const local = seg ? (target - acc) / seg : 1;
+        const t = easeInOut(Math.max(0, Math.min(1, local)));
+        return {
+          x: lerp(pts[i - 1].x, pts[i].x, t),
+          y: lerp(pts[i - 1].y, pts[i].y, t),
+          shot: pts[i].shot && local > 0.05,
+        };
+      }
+      acc += seg;
+    }
+    return { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y };
+  }
+
+  animateTick(anim, duration) {
+    return new Promise((resolve) => {
+      if (this.stopped || !anim) return resolve();
+      const slotsA = this.layout(this.match.a, 0);
+      const slotsB = this.layout(this.match.b, 1);
+      const pts = this.buildPoints(anim, slotsA, slotsB);
+      const start = performance.now();
+      const step = (now) => {
+        if (this.stopped) return resolve();
+        const p = Math.min(1, (now - start) / duration);
+        const ball = this.ballAt(pts, p);
+        this.drawFrame(p, anim, slotsA, slotsB, ball, now / 1000);
+        if (p >= 1) {
+          this.ball = anim.goal ? { x: 0.5, y: 0.5 } : { x: ball.x, y: ball.y };
+          return resolve();
+        }
+        this._raf = requestAnimationFrame(step);
+      };
+      this._raf = requestAnimationFrame(step);
+    });
+  }
+
+  drawFrame(p, anim, slotsA, slotsB, ball, time) {
+    this.drawField();
+    const atkSide = anim.seq[0] ? anim.seq[0].side : 0;
+    const shift = Math.sin(Math.PI * p) * 0.05;   // 攻撃側は前へ、守備側は後ろへ
+    this.drawTeam(slotsB, 1, atkSide === 1 ? shift : -shift * 0.6, ball, time);
+    this.drawTeam(slotsA, 0, atkSide === 0 ? shift : -shift * 0.6, ball, time);
+    this.drawBall(ball, p);
+    if (anim.goal && p > 0.8) this.drawGoalBurst(ball);
+  }
+
+  drawField() {
+    const ctx = this.ctx, W = this.W, H = this.H;
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, "#2f9c4a"); grd.addColorStop(1, "#278a40");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
+    // 芝のストライプ
+    ctx.fillStyle = "rgba(255,255,255,0.04)";
+    const stripes = 8;
+    for (let i = 0; i < stripes; i += 2) ctx.fillRect((i / stripes) * W, 0, W / stripes, H);
+    ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1.5;
+    const [lx, ty] = this.px(M, M), [rx, by] = this.px(1 - M, 1 - M);
+    ctx.strokeRect(lx, ty, rx - lx, by - ty);
+    // ハーフウェイライン＋センターサークル
+    ctx.beginPath(); ctx.moveTo(W / 2, ty); ctx.lineTo(W / 2, by); ctx.stroke();
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, W * 0.07, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, 2.5, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fill();
+    // ペナルティエリア＆ゴール
+    for (const side of [0, 1]) {
+      const boxDepth = 0.16, boxHalf = 0.22;
+      const gx = this.attackGoalX(1 - side); // side守備側のゴールライン
+      const nearX = side === 0 ? M : 1 - M;
+      const dir = side === 0 ? 1 : -1;
+      const [bx1, by1] = this.px(nearX, 0.5 - boxHalf);
+      const [bx2, by2] = this.px(nearX + dir * boxDepth, 0.5 + boxHalf);
+      ctx.strokeRect(bx1, by1, bx2 - bx1, by2 - by1);
+      // ゴール枠
+      const [g1x, g1y] = this.px(nearX, 0.5 - GOAL_HALF);
+      const [g2x, g2y] = this.px(nearX - dir * 0.02, 0.5 + GOAL_HALF);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillRect(Math.min(g1x, g2x), g1y, Math.abs(g2x - g1x) + 1, g2y - g1y);
+    }
+  }
+
+  drawTeam(slots, side, shiftX, ball, time) {
+    const ctx = this.ctx, kit = this.kits[side];
+    const dir = side === 0 ? 1 : -1;
+    for (const s of slots) {
+      const idle = 0.004 * Math.sin(time * 1.6 + this.phase[(side * 22 + s.num) % 44]);
+      let nx = s.base.x + shiftX * dir + idle;
+      let ny = s.base.y + idle * 0.7;
+      if (s.pos === "GK") {
+        // GKはゴール前で左右に。シュート時は反応する
+        ny = lerp(s.base.y, this.gkTargetY(side, ball), 0.5);
+        nx = s.base.x;
+      } else {
+        // ボールへ少し寄る（守備側は強め）
+        const dx = ball.x - nx, dy = ball.y - ny;
+        const dist = Math.hypot(dx, dy) + 0.001;
+        const pull = Math.min(0.05, 0.02 / (dist + 0.15)) * (this.shot && this.shot.defSide === side ? 1.4 : 1);
+        nx += (dx / dist) * pull * 0.6;
+        ny += (dy / dist) * pull;
+      }
+      this.drawPlayer(nx, ny, kit, s);
+    }
+  }
+
+  gkTargetY(side, ball) {
+    // 自ゴール側にいるGKだけがボールに反応
+    const ownGoalX = side === 0 ? M : 1 - M;
+    if (Math.abs(ball.x - ownGoalX) > 0.4) return 0.5;
+    if (this.shot && this.shot.defSide === side) {
+      if (this.shot.phase === "goal") return 0.5 - Math.sign(this.shot.targetY - 0.5) * 0.05; // 逆を突かれる
+      return lerp(0.5, this.shot.targetY, 0.8); // セーブ/枠外に反応
+    }
+    return lerp(0.5, ball.y, 0.4);
+  }
+
+  drawPlayer(nx, ny, kit, s) {
+    const ctx = this.ctx, [x, y] = this.px(nx, ny);
+    const r = this.W * 0.016;
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.9, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = kit.fill; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.stroke();
+    if (s.fatigue >= 70) { // 疲労した選手は赤リング
+      ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,90,90,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    ctx.fillStyle = kit.text; ctx.font = `bold ${Math.round(r * 1.1)}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(s.num), x, y);
+  }
+
+  drawBall(ball, p) {
+    const ctx = this.ctx, [x, y] = this.px(ball.x, ball.y);
+    const r = this.W * 0.011;
+    if (ball.shot) { // シュート中は尾を引く
+      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = r;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - (ball.vx || 0), y - (ball.vy || 0)); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "#333"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, Math.PI * 2); ctx.fillStyle = "#333"; ctx.fill();
+  }
+
+  drawGoalBurst(ball) {
+    const ctx = this.ctx, [x, y] = this.px(ball.x, ball.y);
+    ctx.strokeStyle = "rgba(255,215,60,0.9)"; ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI * 2 * i) / 8;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a) * 6, y + Math.sin(a) * 6);
+      ctx.lineTo(x + Math.cos(a) * 16, y + Math.sin(a) * 16);
+      ctx.stroke();
+    }
+  }
+
+  // 静止フレーム（キックオフ前・ハーフタイム表示用）
+  drawStatic() {
+    if (this.stopped) return;
+    const slotsA = this.layout(this.match.a, 0);
+    const slotsB = this.layout(this.match.b, 1);
+    this.drawField();
+    this.drawTeam(slotsB, 1, 0, this.ball, 0);
+    this.drawTeam(slotsA, 0, 0, this.ball, 0);
+    this.drawBall(this.ball, 0);
+  }
+}
+
+</script>
+<script>
+// 画面フロー: セットアップ → 読み込み → 試合(前半 → HT → 後半) → 結果
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+
+const app = {
+  setups: [newSetup(), newSetup()],   // セットアップ画面の選択状態
+  strategies: [null, null],           // 読み込み済み戦略
+  match: null,
+  pitch: null,
+  loopGen: 0,
+  speed: 1,
+  htDone: [false, false],
+};
+
+function newSetup() {
+  return {
+    manager: "", teamKey: "", formation: "4-4-2", picked: new Set(),
+    tactics: { attack: "ポゼッション", defense: "ゾーン", line: "普通", tempo: "普通" },
+    trump: "スーパーサブ",
+  };
+}
+
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+  $(id).classList.add("active");
+}
+
+// ---- セットアップ画面 ----
+
+function renderSetup() {
+  const wrap = $("#setup-panels");
+  wrap.innerHTML = "";
+  app.setups.forEach((st, i) => wrap.appendChild(setupPanel(st, i)));
+}
+
+function setupPanel(st, i) {
+  const panel = el("div", "panel");
+  panel.appendChild(el("h2", null, `監督 ${i + 1}`));
+
+  const nameRow = el("div", "row");
+  nameRow.appendChild(el("label", null, "監督名: "));
+  const nameInput = el("input");
+  nameInput.placeholder = "例: 山田タカ";
+  nameInput.value = st.manager;
+  nameInput.addEventListener("input", () => { st.manager = nameInput.value.trim(); updateDl(); });
+  nameRow.appendChild(nameInput);
+  panel.appendChild(nameRow);
+
+  const teamRow = el("div", "row");
+  teamRow.appendChild(el("label", null, "使用チーム: "));
+  const teamSel = el("select");
+  teamSel.appendChild(new Option("選択してください", ""));
+  for (const [key, t] of Object.entries(TEAMS_DATA)) teamSel.appendChild(new Option(t.name, key));
+  teamSel.value = st.teamKey;
+  teamSel.addEventListener("change", () => {
+    st.teamKey = teamSel.value;
+    st.picked = new Set();
+    renderSetup();
+  });
+  teamRow.appendChild(teamSel);
+  panel.appendChild(teamRow);
+
+  if (!st.teamKey) return panel;
+  const team = TEAMS_DATA[st.teamKey];
+  panel.appendChild(el("p", "desc", `「${team.desc}」`));
+
+  const fRow = el("div", "row");
+  fRow.appendChild(el("label", null, "フォーメーション: "));
+  const fSel = el("select");
+  for (const f of Object.keys(FORMATIONS)) fSel.appendChild(new Option(f, f));
+  fSel.value = st.formation;
+  fSel.addEventListener("change", () => { st.formation = fSel.value; st.picked = new Set(); renderSetup(); });
+  fRow.appendChild(fSel);
+  panel.appendChild(fRow);
+
+  const need = { GK: 1, ...FORMATIONS[st.formation] };
+  const count = { GK: 0, DF: 0, MF: 0, FW: 0 };
+  for (const n of st.picked) {
+    const p = team.players.find((x) => x.name === n);
+    if (p) count[p.pos]++;
+  }
+  const status = el("p", "pick-status",
+    POS_ORDER.map((pos) => `${pos} ${count[pos]}/${need[pos]}`).join("　"));
+  panel.appendChild(status);
+  panel.appendChild(el("p", "hint", "行をクリックして先発選手を選んでください"));
+
+  const table = el("table", "roster");
+  const thead = el("thead");
+  const hr = el("tr");
+  for (const h of ["", "名前", "Pos", ...STAT_NAMES]) hr.appendChild(el("th", null, h));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  for (const p of team.players) {
+    const tr = el("tr", st.picked.has(p.name) ? "picked" : "");
+    tr.appendChild(el("td", "mark", st.picked.has(p.name) ? "✓" : ""));
+    tr.appendChild(el("td", "pname", p.name));
+    tr.appendChild(el("td", null, p.pos));
+    for (const v of p.stats) {
+      const td = el("td", v >= 75 ? "hi" : v <= 40 ? "lo" : "", String(v));
+      tr.appendChild(td);
+    }
+    tr.addEventListener("click", () => {
+      if (st.picked.has(p.name)) st.picked.delete(p.name);
+      else if (count[p.pos] < need[p.pos]) st.picked.add(p.name);
+      else return flash(status, `${p.pos} は ${need[p.pos]}人までです`);
+      renderSetup();
+    });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  const scroll = el("div", "table-scroll");
+  scroll.appendChild(table);
+  panel.appendChild(scroll);
+
+  // 戦術選択（クイックプレイ用。ダウンロードした.mdでも同じ項目を編集できる）
+  panel.appendChild(el("h3", "tactics-h", "戦術"));
+  const tacticsWrap = el("div", "tactics-grid");
+  const addSel = (label, options, current, onChange) => {
+    const row = el("label", "tsel");
+    row.appendChild(el("span", null, label));
+    const sel = el("select");
+    for (const o of options) sel.appendChild(new Option(o, o));
+    sel.value = current;
+    sel.addEventListener("change", () => onChange(sel.value));
+    row.appendChild(sel);
+    tacticsWrap.appendChild(row);
+  };
+  addSel("攻撃", ATTACK_STYLES, st.tactics.attack, (v) => { st.tactics.attack = v; });
+  addSel("守備", DEFENSE_STYLES, st.tactics.defense, (v) => { st.tactics.defense = v; });
+  addSel("ライン", LINES, st.tactics.line, (v) => { st.tactics.line = v; });
+  addSel("テンポ", TEMPOS, st.tactics.tempo, (v) => { st.tactics.tempo = v; });
+  addSel("切り札", TRUMPS, st.trump, (v) => { st.trump = v; });
+  panel.appendChild(tacticsWrap);
+
+  const dlBtn = el("button", null, "戦略ファイルをダウンロード（.md編集で詳細設定）");
+  dlBtn.id = `dl-${i}`;
+  dlBtn.addEventListener("click", () => downloadStrategy(st));
+  panel.appendChild(dlBtn);
+  const note = el("p", "hint", "");
+  note.id = `dl-note-${i}`;
+  panel.appendChild(note);
+  updateDl();
+  return panel;
+}
+
+function flash(elm, msg) {
+  const old = elm.textContent;
+  elm.textContent = msg;
+  elm.classList.add("warn");
+  setTimeout(() => { elm.textContent = old; elm.classList.remove("warn"); }, 1500);
+}
+
+function setupComplete(st) {
+  if (!st.manager || !st.teamKey) return false;
+  const team = TEAMS_DATA[st.teamKey];
+  const need = { GK: 1, ...FORMATIONS[st.formation] };
+  const count = { GK: 0, DF: 0, MF: 0, FW: 0 };
+  for (const n of st.picked) {
+    const p = team.players.find((x) => x.name === n);
+    if (p) count[p.pos]++;
+  }
+  return POS_ORDER.every((pos) => count[pos] === need[pos]);
+}
+
+function updateDl() {
+  app.setups.forEach((st, i) => {
+    const btn = $(`#dl-${i}`), note = $(`#dl-note-${i}`);
+    if (!btn) return;
+    const ok = setupComplete(st);
+    btn.disabled = !ok;
+    note.textContent = ok ? "" :
+      !st.manager ? "先に監督名を入力してください" : "スタメン11人を選んでください";
+  });
+  updateQuickStart();
+}
+
+function updateQuickStart() {
+  const btn = $("#quick-start");
+  if (!btn) return;
+  const bothReady = app.setups.every(setupComplete);
+  btn.disabled = !bothReady;
+  const note = $("#quick-note");
+  if (note) note.textContent = bothReady ? "" : "両監督のチームとスタメン11人を決めると押せます";
+}
+
+// セットアップ画面の選択から、ファイルを介さず直接プレイ用の戦略を作る
+function buildStrategyFromSetup(st) {
+  const team = TEAMS_DATA[st.teamKey];
+  const starters = { GK: [], DF: [], MF: [], FW: [] };
+  for (const p of team.players) if (st.picked.has(p.name)) starters[p.pos].push(p.name);
+  const benchFw = team.players.find((p) => p.pos === "FW" && !st.picked.has(p.name))
+    || team.players.find((p) => !st.picked.has(p.name));
+  const trumpType = st.trump || "スーパーサブ";
+  return {
+    manager: st.manager || "監督",
+    teamKey: st.teamKey,
+    formation: st.formation,
+    tactics: { ...st.tactics },
+    starters,
+    rules: [
+      { conds: ["終盤", "リード"], changes: { "守備スタイル": "リトリート", "テンポ": "遅い" } },
+      { conds: ["後半", "ビハインド"], changes: { "ライン設定": "高い", "テンポ": "速い" } },
+    ],
+    trump: {
+      type: trumpType,
+      conds: trumpType === "パワープレー" ? ["終盤", "ビハインド"] : ["後半", "ビハインド"],
+      player: trumpType === "スーパーサブ" && benchFw ? benchFw.name : "",
+    },
+  };
+}
+
+function downloadStrategy(st) {
+  const team = TEAMS_DATA[st.teamKey];
+  const starters = { GK: [], DF: [], MF: [], FW: [] };
+  for (const p of team.players) if (st.picked.has(p.name)) starters[p.pos].push(p.name);
+  const md = buildStrategyMd({ manager: st.manager, teamKey: st.teamKey, formation: st.formation, starters });
+  const fname = `${st.manager.replace(/[\\/:*?"<>|\s]/g, "_")}_${timestampStr(new Date())}.md`;
+  downloadText(fname, md);
+}
+
+function downloadText(fname, text) {
+  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+// ---- 読み込み画面 ----
+
+function initLoadScreen() {
+  [0, 1].forEach((i) => {
+    $(`#file-${i}`).addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      const box = $(`#file-status-${i}`);
+      if (!file) return;
+      const text = await file.text();
+      const { strategy, errors } = parseStrategyMd(text);
+      box.innerHTML = "";
+      if (errors.length) {
+        app.strategies[i] = null;
+        box.appendChild(el("p", "err", `❌ ${file.name} を受理できません:`));
+        for (const err of errors) box.appendChild(el("p", "err-item", `・${err}`));
+      } else {
+        app.strategies[i] = strategy;
+        const t = TEAMS_DATA[strategy.teamKey];
+        box.appendChild(el("p", "ok", `✅ ${file.name}`));
+        box.appendChild(el("p", null,
+          `${strategy.manager} 監督 ／ ${t.name} ／ ${strategy.formation} ／ ` +
+          `${strategy.tactics.attack}×${strategy.tactics.defense} ／ ライン${strategy.tactics.line}・テンポ${strategy.tactics.tempo} ／ 切り札: ${strategy.trump.type}`));
+      }
+      $("#start-match").disabled = !(app.strategies[0] && app.strategies[1]);
+    });
+  });
+  $("#start-match").addEventListener("click", startMatch);
+}
+
+// ---- 試合画面 ----
+
+function startMatch() {
+  const seedInput = $("#seed-input").value.trim();
+  const seed = seedInput ? (parseInt(seedInput, 10) >>> 0) : (Math.random() * 4294967296) >>> 0;
+  if (app.pitch) app.pitch.stop();
+  app.match = new Match(app.strategies[0], app.strategies[1], seed);
+  app.htDone = [false, false];
+  showScreen("#screen-match");
+  $("#log").innerHTML = "";
+  $("#ht-panel").classList.add("hidden");
+  $("#result-panel").classList.add("hidden");
+  app.pitch = new Pitch($("#pitch"), app.match);
+  const m = app.match;
+  addLog({ kind: "section", minute: "", text: `⚽ キックオフ！ ${m.a.team.name}（${m.a.strategy.manager}監督） vs ${m.b.team.name}（${m.b.strategy.manager}監督）` });
+  const notes = [];
+  for (const ts of m.teams()) {
+    for (const p of ts.players) {
+      if (p.cond === "絶好調") notes.push(`☀${p.name}(${ts.team.name})`);
+      if (p.cond === "絶不調") notes.push(`🌧${p.name}(${ts.team.name})`);
+    }
+  }
+  if (notes.length) addLog({ kind: "info", minute: "", text: `本日のコンディション速報 — ${notes.join(" ／ ")}` });
+  updateScoreboard();
+  startLoop();
+}
+
+// アニメーションと同期したティックループ。app.loopGen で多重起動・中断を管理する
+function startLoop() {
+  const gen = ++app.loopGen;
+  loopStep(gen);
+}
+
+async function loopStep(gen) {
+  if (gen !== app.loopGen) return;
+  const m = app.match;
+  if (m.finished || m.atHalftime) return;
+  const before = m.events.length;
+  m.step();
+  for (let i = before; i < m.events.length; i++) addLog(m.events[i]);
+  updateScoreboard();
+  const dur = Math.max(150, 1400 / app.speed);
+  await app.pitch.animateTick(m.tickAnim, dur);
+  if (gen !== app.loopGen) return;
+  if (m.atHalftime) { showHalftime(); return; }
+  if (m.finished) { showResult(); return; }
+  loopStep(gen);
+}
+
+function updateScoreboard() {
+  const m = app.match;
+  $("#sb-teams").textContent = `${m.a.team.name} ${m.score[0]} - ${m.score[1]} ${m.b.team.name}`;
+  $("#sb-minute").textContent = m.finished ? "試合終了" : m.atHalftime ? "ハーフタイム" : m.minuteLabel();
+}
+
+function addLog(ev) {
+  const log = $("#log");
+  const line = el("div", `ev ev-${ev.kind}`);
+  if (ev.minute) line.appendChild(el("span", "min", `[${ev.minute}] `));
+  line.appendChild(el("span", null, ev.text));
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ---- ハーフタイム ----
+
+function showHalftime() {
+  const m = app.match;
+  const panel = $("#ht-panel");
+  panel.classList.remove("hidden");
+  const body = $("#ht-body");
+  body.innerHTML = "";
+  m.teams().forEach((ts, i) => {
+    const col = el("div", "panel");
+    col.appendChild(el("h3", null, `${ts.team.name}（${ts.strategy.manager}監督）`));
+    col.appendChild(htTable(ts));
+
+    const dlBtn = el("button", null, "HT指示ひな形をダウンロード");
+    dlBtn.addEventListener("click", () =>
+      downloadText(`${ts.strategy.manager.replace(/[\\/:*?"<>|\s]/g, "_")}_HT_${timestampStr(new Date())}.md`,
+        buildHalftimeMd(ts, m.scoreStr())));
+    col.appendChild(dlBtn);
+
+    const fileIn = el("input");
+    fileIn.type = "file";
+    fileIn.accept = ".md,.txt";
+    const status = el("div", "file-status");
+    fileIn.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      const { ht, errors } = parseHalftimeMd(text);
+      status.innerHTML = "";
+      if (errors.length) {
+        for (const err of errors) status.appendChild(el("p", "err-item", `・${err}`));
+        return;
+      }
+      const applyErrors = m.applyHalftime(ts, ht);
+      for (const err of applyErrors) status.appendChild(el("p", "err-item", `・${err}`));
+      status.appendChild(el("p", "ok", "指示を受け付けました"));
+      fileIn.disabled = true;
+      app.htDone[i] = true;
+      updateHtStart();
+    });
+    const skipBtn = el("button", null, "変更なしで続行");
+    skipBtn.addEventListener("click", () => {
+      fileIn.disabled = true;
+      skipBtn.disabled = true;
+      status.appendChild(el("p", "ok", "変更なし"));
+      app.htDone[i] = true;
+      updateHtStart();
+    });
+    col.appendChild(el("p", "hint", "指示ファイルを読み込むか、変更なしを選択:"));
+    col.appendChild(fileIn);
+    col.appendChild(skipBtn);
+    col.appendChild(status);
+    body.appendChild(col);
+  });
+  updateHtStart();
+}
+
+function htTable(ts) {
+  const table = el("table", "roster small");
+  const hr = el("tr");
+  for (const h of ["名前", "Pos", "疲労", "調子", "評価"]) hr.appendChild(el("th", null, h));
+  table.appendChild(hr);
+  const rows = ts.players.filter((p) => p.onPitch || p.subbedOut)
+    .concat(ts.players.filter((p) => !p.onPitch && !p.subbedOut));
+  for (const p of rows) {
+    const tr = el("tr", p.onPitch ? "" : p.subbedOut ? "out" : "bench");
+    tr.appendChild(el("td", "pname", (p.onPitch ? "" : p.subbedOut ? "↓ " : "B ") + p.name));
+    tr.appendChild(el("td", null, p.pos));
+    const f = Math.round(p.fatigue);
+    tr.appendChild(el("td", f >= 70 ? "lo" : "", String(f)));
+    tr.appendChild(el("td", p.cond === "絶不調" || p.cond === "不調" ? "lo" : p.cond === "絶好調" ? "hi" : "", p.cond));
+    tr.appendChild(el("td", null, p.onPitch || p.subbedOut ? p.rating.toFixed(1) : "-"));
+    table.appendChild(tr);
+  }
+  const scroll = el("div", "table-scroll");
+  scroll.appendChild(table);
+  return scroll;
+}
+
+function updateHtStart() {
+  $("#start-2nd").disabled = !(app.htDone[0] && app.htDone[1]);
+}
+
+// ---- 結果 ----
+
+function showResult() {
+  const m = app.match;
+  const r = m.result();
+  const panel = $("#result-panel");
+  panel.classList.remove("hidden");
+  const body = $("#result-body");
+  body.innerHTML = "";
+  body.appendChild(el("h3", null, `最終スコア: ${m.scoreStr()}`));
+  const stats = el("p", null,
+    `支配率 ${r.possession[0]}% - ${r.possession[1]}% ／ シュート ${r.stats[0].shots} - ${r.stats[1].shots} ／ 決定機 ${r.stats[0].chances} - ${r.stats[1].chances}`);
+  body.appendChild(stats);
+  body.appendChild(el("p", "mvp", `🏆 MVP: ${r.mvp.name}（${r.mvp.teamName}） 評価 ${r.mvp.rating.toFixed(1)}`));
+
+  const cols = el("div", "columns");
+  for (const ts of m.teams()) {
+    const col = el("div", "panel");
+    col.appendChild(el("h4", null, `${ts.team.name} 選手評価`));
+    col.appendChild(htTable(ts));
+    cols.appendChild(col);
+  }
+  body.appendChild(cols);
+  body.appendChild(el("p", "hint", `乱数シード: ${r.seed}（読み込み画面でシードを指定すると同じ試合を再現できます）`));
+  panel.scrollIntoView({ behavior: "smooth" });
+}
+
+// ---- 初期化 ----
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderSetup();
+  initLoadScreen();
+  $("#to-load").addEventListener("click", () => showScreen("#screen-load"));
+  $("#back-setup").addEventListener("click", () => showScreen("#screen-setup"));
+  $("#quick-start").addEventListener("click", () => {
+    if (!app.setups.every(setupComplete)) return;
+    app.strategies = [buildStrategyFromSetup(app.setups[0]), buildStrategyFromSetup(app.setups[1])];
+    startMatch();
+  });
+  $("#start-2nd").addEventListener("click", () => {
+    $("#ht-panel").classList.add("hidden");
+    app.match.startSecondHalf();
+    const evs = app.match.events;
+    addLog(evs[evs.length - 1]);
+    startLoop();
+  });
+  document.querySelectorAll("[data-speed]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      app.speed = Number(btn.dataset.speed);   // ループが毎ティック参照するので再起動不要
+      document.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+  $("#rematch").addEventListener("click", () => {
+    if (app.strategies[0] && app.strategies[1]) { $("#seed-input").value = ""; startMatch(); }
+  });
+  $("#new-match").addEventListener("click", () => {
+    app.loopGen++;                              // 走行中のループを止める
+    if (app.pitch) { app.pitch.stop(); app.pitch = null; }
+    renderSetup();
+    showScreen("#screen-setup");
+  });
+});
+
+</script>

@@ -19,7 +19,11 @@ const app = {
 };
 
 function newSetup() {
-  return { manager: "", teamKey: "", formation: "4-4-2", picked: new Set() };
+  return {
+    manager: "", teamKey: "", formation: "4-4-2", picked: new Set(),
+    tactics: { attack: "ポゼッション", defense: "ゾーン", line: "普通", tempo: "普通" },
+    trump: "スーパーサブ",
+  };
 }
 
 function showScreen(id) {
@@ -115,7 +119,27 @@ function setupPanel(st, i) {
   scroll.appendChild(table);
   panel.appendChild(scroll);
 
-  const dlBtn = el("button", "primary", "戦略ファイルをダウンロード");
+  // 戦術選択（クイックプレイ用。ダウンロードした.mdでも同じ項目を編集できる）
+  panel.appendChild(el("h3", "tactics-h", "戦術"));
+  const tacticsWrap = el("div", "tactics-grid");
+  const addSel = (label, options, current, onChange) => {
+    const row = el("label", "tsel");
+    row.appendChild(el("span", null, label));
+    const sel = el("select");
+    for (const o of options) sel.appendChild(new Option(o, o));
+    sel.value = current;
+    sel.addEventListener("change", () => onChange(sel.value));
+    row.appendChild(sel);
+    tacticsWrap.appendChild(row);
+  };
+  addSel("攻撃", ATTACK_STYLES, st.tactics.attack, (v) => { st.tactics.attack = v; });
+  addSel("守備", DEFENSE_STYLES, st.tactics.defense, (v) => { st.tactics.defense = v; });
+  addSel("ライン", LINES, st.tactics.line, (v) => { st.tactics.line = v; });
+  addSel("テンポ", TEMPOS, st.tactics.tempo, (v) => { st.tactics.tempo = v; });
+  addSel("切り札", TRUMPS, st.trump, (v) => { st.trump = v; });
+  panel.appendChild(tacticsWrap);
+
+  const dlBtn = el("button", null, "戦略ファイルをダウンロード（.md編集で詳細設定）");
   dlBtn.id = `dl-${i}`;
   dlBtn.addEventListener("click", () => downloadStrategy(st));
   panel.appendChild(dlBtn);
@@ -154,6 +178,42 @@ function updateDl() {
     note.textContent = ok ? "" :
       !st.manager ? "先に監督名を入力してください" : "スタメン11人を選んでください";
   });
+  updateQuickStart();
+}
+
+function updateQuickStart() {
+  const btn = $("#quick-start");
+  if (!btn) return;
+  const bothReady = app.setups.every(setupComplete);
+  btn.disabled = !bothReady;
+  const note = $("#quick-note");
+  if (note) note.textContent = bothReady ? "" : "両監督のチームとスタメン11人を決めると押せます";
+}
+
+// セットアップ画面の選択から、ファイルを介さず直接プレイ用の戦略を作る
+function buildStrategyFromSetup(st) {
+  const team = TEAMS_DATA[st.teamKey];
+  const starters = { GK: [], DF: [], MF: [], FW: [] };
+  for (const p of team.players) if (st.picked.has(p.name)) starters[p.pos].push(p.name);
+  const benchFw = team.players.find((p) => p.pos === "FW" && !st.picked.has(p.name))
+    || team.players.find((p) => !st.picked.has(p.name));
+  const trumpType = st.trump || "スーパーサブ";
+  return {
+    manager: st.manager || "監督",
+    teamKey: st.teamKey,
+    formation: st.formation,
+    tactics: { ...st.tactics },
+    starters,
+    rules: [
+      { conds: ["終盤", "リード"], changes: { "守備スタイル": "リトリート", "テンポ": "遅い" } },
+      { conds: ["後半", "ビハインド"], changes: { "ライン設定": "高い", "テンポ": "速い" } },
+    ],
+    trump: {
+      type: trumpType,
+      conds: trumpType === "パワープレー" ? ["終盤", "ビハインド"] : ["後半", "ビハインド"],
+      player: trumpType === "スーパーサブ" && benchFw ? benchFw.name : "",
+    },
+  };
 }
 
 function downloadStrategy(st) {
@@ -386,6 +446,11 @@ document.addEventListener("DOMContentLoaded", () => {
   initLoadScreen();
   $("#to-load").addEventListener("click", () => showScreen("#screen-load"));
   $("#back-setup").addEventListener("click", () => showScreen("#screen-setup"));
+  $("#quick-start").addEventListener("click", () => {
+    if (!app.setups.every(setupComplete)) return;
+    app.strategies = [buildStrategyFromSetup(app.setups[0]), buildStrategyFromSetup(app.setups[1])];
+    startMatch();
+  });
   $("#start-2nd").addEventListener("click", () => {
     $("#ht-panel").classList.add("hidden");
     app.match.startSecondHalf();
@@ -400,15 +465,13 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.classList.add("active");
     });
   });
+  $("#rematch").addEventListener("click", () => {
+    if (app.strategies[0] && app.strategies[1]) { $("#seed-input").value = ""; startMatch(); }
+  });
   $("#new-match").addEventListener("click", () => {
     app.loopGen++;                              // 走行中のループを止める
     if (app.pitch) { app.pitch.stop(); app.pitch = null; }
-    app.strategies = [null, null];
-    $("#start-match").disabled = true;
-    $("#file-0").value = "";
-    $("#file-1").value = "";
-    $("#file-status-0").innerHTML = "";
-    $("#file-status-1").innerHTML = "";
-    showScreen("#screen-load");
+    renderSetup();
+    showScreen("#screen-setup");
   });
 });

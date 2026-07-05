@@ -86,7 +86,13 @@ td.lo { color: #ef9a9a; }
 .mark { color: #4caf50; }
 .pick-status { font-weight: bold; color: #cfe3d2; }
 
+.tactics-h { margin: 0.8rem 0 0.4rem; font-size: 1rem; color: #cfe3d2; }
+.tactics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 0.8rem; margin-bottom: 0.8rem; }
+.tsel { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; color: #9fc0a5; }
+.tsel select { flex: 1; max-width: 62%; }
+
 .nav { margin: 1rem 0; text-align: center; }
+.nav .hint { margin: 0.4rem 0; }
 .file-status { margin-top: 0.5rem; font-size: 0.88rem; }
 .ok { color: #81c784; }
 .err { color: #ef9a9a; font-weight: bold; }

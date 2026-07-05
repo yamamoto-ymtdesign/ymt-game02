@@ -17,16 +17,18 @@
 
 <!-- 1. セットアップ画面 -->
 <section id="screen-setup" class="screen active">
-  <h2 class="step">STEP 1 ─ チームとスタメンを決めて、戦略ファイルをダウンロード</h2>
+  <h2 class="step">STEP 1 ─ 両監督のチーム・スタメン・戦術を決める</h2>
   <p class="hint">
     監督名を入力し、使用チームとフォーメーションを選び、ロスターの一覧表をクリックして
-    スターティングメンバー11人を決めてください。ダウンロードされる戦略ファイル（.md）には
-    選んだ選手が入力済みです。ファイルを開いて、攻撃スタイルなどの戦術を
-    <code>[x]</code> で選んでから STEP 2 で読み込ませます。
+    スターティングメンバー11人を決めてください。戦術を選んだら、そのまま
+    <strong>「この設定で試合開始」</strong>で観戦できます（動作チェックに便利）。
+    じっくり作り込みたい場合は戦略ファイル（.md）をダウンロードして編集し、STEP 2 で読み込ませます。
   </p>
   <div id="setup-panels" class="columns"></div>
   <div class="nav">
-    <button id="to-load" class="primary">STEP 2 読み込み画面へ →</button>
+    <button id="quick-start" class="primary" disabled>🏟 この設定で試合開始（ファイル不要）</button>
+    <p id="quick-note" class="hint"></p>
+    <button id="to-load">戦略ファイルを読み込んで開始する（STEP 2）→</button>
   </div>
 </section>
 
@@ -87,7 +89,8 @@
     <h2 class="step">試合結果</h2>
     <div id="result-body"></div>
     <div class="nav">
-      <button id="new-match" class="primary">同じメンバーでもう一試合（読み込み画面へ）</button>
+      <button id="rematch" class="primary">🔁 同じ設定でもう一試合</button>
+      <button id="new-match">設定を変更する（STEP 1 へ）</button>
     </div>
   </div>
 </section>
