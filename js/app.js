@@ -298,11 +298,12 @@ function startLoop() {
   loopStep(gen);
 }
 
-// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールほど長くゆっくり見せる
-const TICK_DURATION = { 0: 550, 1: 2300, 2: 2600 };
-const TICK_HOLD = { 0: 0, 1: 300, 2: 1300 };
-const TICK_DUR_MIN = { 0: 120, 1: 500, 2: 500 };
-const TICK_HOLD_MIN = { 0: 0, 1: 100, 2: 150 };
+// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールはビルドアップ→カメラズーム→
+// シュート直前で一瞬静止→結果、という「間」を作るぶん長めに確保する
+const TICK_DURATION = { 0: 500, 1: 2600, 2: 3200 };
+const TICK_HOLD = { 0: 0, 1: 350, 2: 1400 };
+const TICK_DUR_MIN = { 0: 110, 1: 550, 2: 650 };
+const TICK_HOLD_MIN = { 0: 0, 1: 120, 2: 180 };
 
 async function loopStep(gen) {
   if (gen !== app.loopGen) return;
@@ -330,7 +331,7 @@ async function loopStep(gen) {
       revealTimer = null;
       if (gen !== app.loopGen) return;
       for (const ev of delayed) addLog(ev);
-    }, dur * 0.72);
+    }, dur * 0.75); // ピッチ側の「静止からの解放」タイミング(build+freeze=75%)に合わせる
   }
 
   await app.pitch.animateTick(m.tickAnim, dur);

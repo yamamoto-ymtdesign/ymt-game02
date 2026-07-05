@@ -1096,8 +1096,10 @@ class Match {
 
 </script>
 <script>
-// 2Dピッチ描画。試合の各ティック（2分）を、陣形を保った選手たちが
+// 2Dピッチ描画（斜め見下ろしの疑似3D）。試合の各ティック（2分）を、陣形を保った選手たちが
 // パスを回し攻め上がってシュートするアニメーションとして再生する。
+// 決定機・ゴールの場面ではカメラがぐっとズームし、シュートが弾ける直前に一瞬静止して
+// 「入るか…！？」の間を作ってから結果を見せる。
 
 // チームのキット色（primary=ユニフォーム, alt=対戦相手と被ったとき用）
 const TEAM_KIT = {
@@ -1118,6 +1120,15 @@ const M = 0.045;                 // ピッチ外周マージン（正規化）
 const GOAL_HALF = 0.09;          // ゴール幅の半分
 const DEPTH = { GK: 0.05, DF: 0.24, MF: 0.48, FW: 0.70 }; // 自ゴールからの深さ
 
+// 疑似3D設定：横(幅)方向を圧縮＆シアーして、斜め上から見下ろしたような角度をつくる
+const TILT_SQUISH = 0.80;   // 幅方向の圧縮率（小さいほど寝た角度に見える）
+const TILT_SHEAR = 0.11;    // 幅方向の位置によるカメラの傾き（遠近の斜め感）
+const SCALE_FAR = 0.84;     // 奥側の縮小率
+const SCALE_NEAR = 1.14;    // 手前側の拡大率
+
+// 決定機・ゴールのカメラズーム
+const ZOOM_MAX = 1.85;
+
 function hexToRgb(h) {
   const s = h.replace("#", "");
   return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
@@ -1130,6 +1141,13 @@ function textColor(hex) {
   const [r, g, b] = hexToRgb(hex);
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#111" : "#fff";
 }
+function resolveKits(keyA, keyB) {
+  const A = TEAM_KIT[keyA] || DEFAULT_KIT, B = TEAM_KIT[keyB] || DEFAULT_KIT;
+  let cA = A.primary, cB = B.primary;
+  if (colorDist(cA, cB) < 130) cB = B.alt;
+  if (colorDist(cA, cB) < 130) cB = "#ffffff";
+  return [{ fill: cA, text: textColor(cA) }, { fill: cB, text: textColor(cB) }];
+}
 
 // 選手の肌の色合い（名前から決定的に選ぶ＝毎回同じ選手は同じ色。
 // 国籍で一括に決めず、個々の選手に多様な色合いを持たせる）
@@ -1140,13 +1158,6 @@ function hashStr(s) {
   return Math.abs(h);
 }
 function skinTone(name) { return SKIN_TONES[hashStr(name) % SKIN_TONES.length]; }
-function resolveKits(keyA, keyB) {
-  const A = TEAM_KIT[keyA] || DEFAULT_KIT, B = TEAM_KIT[keyB] || DEFAULT_KIT;
-  let cA = A.primary, cB = B.primary;
-  if (colorDist(cA, cB) < 130) cB = B.alt;
-  if (colorDist(cA, cB) < 130) cB = "#ffffff";
-  return [{ fill: cA, text: textColor(cA) }, { fill: cB, text: textColor(cB) }];
-}
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -1157,9 +1168,10 @@ class Pitch {
     this.ctx = canvas.getContext("2d");
     this.match = match;
     this.kits = resolveKits(match.a.strategy.teamKey, match.b.strategy.teamKey);
-    this.ball = { x: 0.5, y: 0.5 };
+    this.ball = { x: 0.5, y: 0.5, height: 0 };
     this.stopped = false;
     this.level = 0;
+    this.shot = null;
     this.resize();
     this._onResize = () => { this.resize(); this.drawStatic(); };
     window.addEventListener("resize", this._onResize);
@@ -1183,8 +1195,19 @@ class Pitch {
     this.W = w; this.H = h;
   }
 
-  // 正規化座標 → ピクセル
-  px(nx, ny) { return [nx * this.W, ny * this.H]; }
+  // 正規化座標（M込み） → ピクセル。幅方向を圧縮・シアーして斜め見下ろし角度に変換する
+  px(nx, ny) {
+    const cy = ny - 0.5;
+    const y = 0.5 + cy * TILT_SQUISH;
+    const x = nx + cy * TILT_SHEAR;
+    return [x * this.W, y * this.H];
+  }
+  // 奥(遠い)ほど小さく、手前(近い)ほど大きく見せる奥行きスケール
+  depthScale(ny) {
+    const t = Math.max(0, Math.min(1, (ny - M) / (1 - 2 * M)));
+    return SCALE_FAR + (SCALE_NEAR - SCALE_FAR) * t;
+  }
+
   // side=0は左ゴール守備・右攻撃、side=1はその逆
   depthX(side, depth) {
     const inner = 1 - 2 * M;
@@ -1240,7 +1263,6 @@ class Pitch {
       const backs = atk.filter((s) => s.pos === "DF");
       const pool = (mids.length ? mids : atk).concat(backs);
       const featured = e.phase !== "possession";
-      // ビルドアップ：決定機は2人経由、平穏なティックは1人だけの短いパス回し
       const buildupCount = featured ? 2 : 1;
       for (let k = 0; k < buildupCount; k++) {
         const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
@@ -1262,6 +1284,8 @@ class Pitch {
     return pts;
   }
 
+  // p(0..1、区間集合全体での進捗)からボールの位置と高さ(弧)を求める。
+  // 距離の長い区間ほど高く弧を描く＝クロス/ロングボールは弧、短いパスは地を這う
   ballAt(pts, p) {
     const total = pts.slice(1).reduce((a, s) => a + s.w, 0) || 1;
     let acc = 0;
@@ -1269,101 +1293,181 @@ class Pitch {
     for (let i = 1; i < pts.length; i++) {
       const seg = pts[i].w;
       if (target <= acc + seg || i === pts.length - 1) {
-        const local = seg ? (target - acc) / seg : 1;
-        const t = easeInOut(Math.max(0, Math.min(1, local)));
+        const local = Math.max(0, Math.min(1, seg ? (target - acc) / seg : 1));
+        const t = easeInOut(local);
+        const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y;
+        const dist = Math.hypot(dx, dy);
+        const arcMax = Math.min(0.1, dist * 0.4) * (pts[i].shot ? 0.5 : 1);
+        const height = arcMax * Math.sin(Math.PI * local);
         return {
           x: lerp(pts[i - 1].x, pts[i].x, t),
           y: lerp(pts[i - 1].y, pts[i].y, t),
+          height,
           shot: pts[i].shot && local > 0.05,
         };
       }
       acc += seg;
     }
-    return { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y };
+    return { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, height: 0 };
+  }
+
+  // シュート区間に入ってから「弾ける直前」で止めるための p 値
+  preShotP(pts) {
+    const total = pts.slice(1).reduce((a, s) => a + s.w, 0) || 1;
+    const shotW = pts[pts.length - 1].shot ? pts[pts.length - 1].w : 0;
+    if (!shotW) return 1;
+    return 1 - 0.16 * (shotW / total);
   }
 
   animateTick(anim, duration) {
+    if (this.stopped || !anim) return Promise.resolve();
+    this.level = anim.level || 0;
+    const slotsA = this.layout(this.match.a, 0);
+    const slotsB = this.layout(this.match.b, 1);
+    const pts = this.buildPoints(anim, slotsA, slotsB);
+    if (this.level >= 1 && this.shot) return this.animateFeatured(anim, pts, duration, slotsA, slotsB);
+    return this.animateQuiet(anim, pts, duration, slotsA, slotsB);
+  }
+
+  // 平穏なティック：ふつうに短く再生するだけ（ズームなし）
+  animateQuiet(anim, pts, duration, slotsA, slotsB) {
     return new Promise((resolve) => {
-      if (this.stopped || !anim) return resolve();
-      this.level = anim.level || 0;
-      const slotsA = this.layout(this.match.a, 0);
-      const slotsB = this.layout(this.match.b, 1);
-      const pts = this.buildPoints(anim, slotsA, slotsB);
       const start = performance.now();
       const step = (now) => {
         if (this.stopped) return resolve();
         const p = Math.min(1, (now - start) / duration);
         const ball = this.ballAt(pts, p);
-        this.drawFrame(p, anim, slotsA, slotsB, ball);
-        if (p >= 1) {
-          this.ball = anim.goal ? { x: 0.5, y: 0.5 } : { x: ball.x, y: ball.y };
-          return resolve();
-        }
+        this.renderScene(p, anim, slotsA, slotsB, ball, 1, null);
+        if (p >= 1) { this.ball = { x: ball.x, y: ball.y, height: 0 }; return resolve(); }
         this._raf = requestAnimationFrame(step);
       };
       this._raf = requestAnimationFrame(step);
     });
   }
 
-  drawFrame(p, anim, slotsA, slotsB, ball) {
-    this.drawField();
+  // 決定機・ゴールのティック：ビルドアップ(ズームイン)→シュート直前で一瞬静止→
+  // 素早く結果を見せてズームアウト、という「間」のある演出
+  animateFeatured(anim, pts, duration, slotsA, slotsB) {
+    const preP = this.preShotP(pts);
+    const shooterPt = pts[pts.length - 2], shotPt = pts[pts.length - 1];
+    const pivot = this.px(lerp(shooterPt.x, shotPt.x, 0.5), lerp(shooterPt.y, shotPt.y, 0.5));
+    const BUILD = duration * 0.58, FREEZE = duration * 0.17, REVEAL = duration - BUILD - FREEZE;
+    return new Promise((resolve) => {
+      const start = performance.now();
+      const step = (now) => {
+        if (this.stopped) return resolve();
+        const el = now - start;
+        let p, zoom;
+        if (el < BUILD) {
+          const b = easeInOut(Math.min(1, el / BUILD));
+          p = preP * b;
+          zoom = 1 + (ZOOM_MAX - 1) * b;
+        } else if (el < BUILD + FREEZE) {
+          p = preP;
+          zoom = ZOOM_MAX;
+        } else {
+          const r = Math.min(1, (el - BUILD - FREEZE) / REVEAL);
+          p = lerp(preP, 1, Math.min(1, r / 0.35));
+          zoom = r < 0.5 ? ZOOM_MAX : lerp(ZOOM_MAX, 1, (r - 0.5) / 0.5);
+        }
+        const ball = this.ballAt(pts, p);
+        this.renderScene(p, anim, slotsA, slotsB, ball, zoom, pivot);
+        if (el >= duration) { this.ball = { x: ball.x, y: ball.y, height: 0 }; return resolve(); }
+        this._raf = requestAnimationFrame(step);
+      };
+      this._raf = requestAnimationFrame(step);
+    });
+  }
+
+  renderScene(p, anim, slotsA, slotsB, ball, zoom, pivotPx) {
+    this.fillBackground();
+    const ctx = this.ctx;
+    ctx.save();
+    if (zoom && zoom !== 1 && pivotPx) {
+      ctx.translate(pivotPx[0], pivotPx[1]);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-pivotPx[0], -pivotPx[1]);
+    }
+    this.drawFieldLines();
     const atkSide = anim.seq[0] ? anim.seq[0].side : 0;
-    // 決定機・ゴールの場面ははっきり攻め上がる。平穏なティックはほぼ陣形を保つ
     const amp = this.level >= 1 ? 0.065 : 0.01;
     const shift = Math.sin(Math.PI * p) * amp;
     this.drawTeam(slotsB, 1, atkSide === 1 ? shift : -shift * 0.6, ball);
     this.drawTeam(slotsA, 0, atkSide === 0 ? shift : -shift * 0.6, ball);
-    this.drawBall(ball, p);
+    this.drawBall(ball);
     if (anim.goal && p > 0.8) this.drawGoalBurst(ball);
+    ctx.restore();
   }
 
-  drawField() {
+  fillBackground() {
     const ctx = this.ctx, W = this.W, H = this.H;
     const grd = ctx.createLinearGradient(0, 0, 0, H);
     grd.addColorStop(0, "#2f9c4a"); grd.addColorStop(1, "#278a40");
     ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
-    // 芝のストライプ
     ctx.fillStyle = "rgba(255,255,255,0.04)";
     const stripes = 8;
     for (let i = 0; i < stripes; i += 2) ctx.fillRect((i / stripes) * W, 0, W / stripes, H);
+  }
+
+  // ピッチのライン類。各点を px() で投影してから多角形として描くので、
+  // 見下ろし角度に応じて台形・斜めの楕円として正しく歪む
+  drawFieldLines() {
+    const ctx = this.ctx;
     ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1.5;
-    const [lx, ty] = this.px(M, M), [rx, by] = this.px(1 - M, 1 - M);
-    ctx.strokeRect(lx, ty, rx - lx, by - ty);
-    // ハーフウェイライン＋センターサークル
-    ctx.beginPath(); ctx.moveTo(W / 2, ty); ctx.lineTo(W / 2, by); ctx.stroke();
-    ctx.beginPath(); ctx.arc(W / 2, H / 2, W * 0.07, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(W / 2, H / 2, 2.5, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fill();
+
+    const poly = (points) => {
+      ctx.beginPath();
+      points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.closePath();
+    };
+
+    // 外枠
+    poly([[M, M], [1 - M, M], [1 - M, 1 - M], [M, 1 - M]].map(([x, y]) => this.px(x, y)));
+    ctx.stroke();
+
+    // ハーフウェイライン
+    const [hx1, hy1] = this.px(0.5, M), [hx2, hy2] = this.px(0.5, 1 - M);
+    ctx.beginPath(); ctx.moveTo(hx1, hy1); ctx.lineTo(hx2, hy2); ctx.stroke();
+
+    // センターサークル（円周をサンプリングして投影→斜めの楕円になる）
+    const circlePts = [];
+    for (let i = 0; i <= 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      circlePts.push(this.px(0.5 + Math.cos(a) * 0.07, 0.5 + Math.sin(a) * 0.07));
+    }
+    poly(circlePts); ctx.stroke();
+    const [ccx, ccy] = this.px(0.5, 0.5);
+    ctx.beginPath(); ctx.arc(ccx, ccy, 2.5, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fill();
+
     // ペナルティエリア＆ゴール
     for (const side of [0, 1]) {
       const boxDepth = 0.16, boxHalf = 0.22;
-      const gx = this.attackGoalX(1 - side); // side守備側のゴールライン
       const nearX = side === 0 ? M : 1 - M;
       const dir = side === 0 ? 1 : -1;
-      const [bx1, by1] = this.px(nearX, 0.5 - boxHalf);
-      const [bx2, by2] = this.px(nearX + dir * boxDepth, 0.5 + boxHalf);
-      ctx.strokeRect(bx1, by1, bx2 - bx1, by2 - by1);
-      // ゴール枠
-      const [g1x, g1y] = this.px(nearX, 0.5 - GOAL_HALF);
-      const [g2x, g2y] = this.px(nearX - dir * 0.02, 0.5 + GOAL_HALF);
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.fillRect(Math.min(g1x, g2x), g1y, Math.abs(g2x - g1x) + 1, g2y - g1y);
+      poly([
+        [nearX, 0.5 - boxHalf], [nearX + dir * boxDepth, 0.5 - boxHalf],
+        [nearX + dir * boxDepth, 0.5 + boxHalf], [nearX, 0.5 + boxHalf],
+      ].map(([x, y]) => this.px(x, y)));
+      ctx.stroke();
+
+      poly([
+        [nearX, 0.5 - GOAL_HALF], [nearX - dir * 0.02, 0.5 - GOAL_HALF],
+        [nearX - dir * 0.02, 0.5 + GOAL_HALF], [nearX, 0.5 + GOAL_HALF],
+      ].map(([x, y]) => this.px(x, y)));
+      ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.fill();
     }
   }
 
   drawTeam(slots, side, shiftX, ball) {
-    const ctx = this.ctx, kit = this.kits[side];
+    const kit = this.kits[side];
     const dir = side === 0 ? 1 : -1;
     for (const s of slots) {
-      // 平穏な場面では陣形をほぼ動かさない。決定機・ゴールの場面だけ
-      // ボールに向かって選手が実際に反応して動く
       let nx = s.base.x + shiftX * dir;
       let ny = s.base.y;
       if (s.pos === "GK") {
-        // GKはゴール前で左右に。シュート時は反応する
         ny = lerp(s.base.y, this.gkTargetY(side, ball), this.level >= 1 ? 0.6 : 0.15);
         nx = s.base.x;
       } else if (this.level >= 1) {
-        // ボールへ寄る（シュートを受ける守備側はより強く反応）
         const dx = ball.x - nx, dy = ball.y - ny;
         const dist = Math.hypot(dx, dy) + 0.001;
         const pull = Math.min(0.06, 0.024 / (dist + 0.15)) * (this.shot && this.shot.defSide === side ? 1.5 : 1);
@@ -1375,38 +1479,36 @@ class Pitch {
   }
 
   gkTargetY(side, ball) {
-    // 自ゴール側にいるGKだけがボールに反応
     const ownGoalX = side === 0 ? M : 1 - M;
     if (Math.abs(ball.x - ownGoalX) > 0.4) return 0.5;
     if (this.shot && this.shot.defSide === side) {
-      if (this.shot.phase === "goal") return 0.5 - Math.sign(this.shot.targetY - 0.5) * 0.05; // 逆を突かれる
-      return lerp(0.5, this.shot.targetY, 0.8); // セーブ/枠外に反応
+      if (this.shot.phase === "goal") return 0.5 - Math.sign(this.shot.targetY - 0.5) * 0.05;
+      return lerp(0.5, this.shot.targetY, 0.8);
     }
     return lerp(0.5, ball.y, 0.4);
   }
 
-  // 上から見た人型（頭＋胴体）で選手を描く。頭の色は選手ごとに固定の肌色
+  // 上から見た人型（頭＋胴体）で選手を描く。頭の色は選手ごとに固定の肌色。
+  // 奥行きスケールで手前は大きく・奥は小さく見せる
   drawPlayer(nx, ny, kit, s) {
     const ctx = this.ctx, [x, y] = this.px(nx, ny);
-    const r = this.W * 0.017;
+    const scale = this.depthScale(ny);
+    const r = this.W * 0.017 * scale;
     const bodyCY = y + r * 0.4, bodyRx = r * 0.82, bodyRy = r * 1.05;
     const headR = r * 0.62, headCY = bodyCY - bodyRy - headR * 0.45;
 
-    // 影
     ctx.beginPath(); ctx.ellipse(x, y + r * 1.5, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fill();
 
-    // 胴体（ユニフォームカラー）
     ctx.beginPath(); ctx.ellipse(x, bodyCY, bodyRx, bodyRy, 0, 0, Math.PI * 2);
     ctx.fillStyle = kit.fill; ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
 
-    // 頭（選手ごとに固定の肌の色合い）
     ctx.beginPath(); ctx.arc(x, headCY, headR, 0, Math.PI * 2);
     ctx.fillStyle = skinTone(s.name); ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
 
-    if (s.fatigue >= 70) { // 疲労した選手は全身を赤リングで囲む
+    if (s.fatigue >= 70) {
       ctx.beginPath();
       ctx.ellipse(x, y - r * 0.05, bodyRx + 3, bodyRy + headR * 1.15, 0, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,90,90,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -1417,17 +1519,23 @@ class Pitch {
     ctx.fillText(String(s.num), x, bodyCY + r * 0.05);
   }
 
-  drawBall(ball, p) {
-    const ctx = this.ctx, [x, y] = this.px(ball.x, ball.y);
-    const r = this.W * 0.011;
-    if (ball.shot) { // シュート中は尾を引く
-      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = r;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - (ball.vx || 0), y - (ball.vy || 0)); ctx.stroke();
-    }
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  // ボールは地面の影(実際の位置)と、高さ分だけ浮いた本体を分けて描く。
+  // 高さがあるほど影が小さく薄くなり、弧を描くクロス/ロングボールが表現される
+  drawBall(ball) {
+    const ctx = this.ctx, [gx, gy] = this.px(ball.x, ball.y);
+    const scale = this.depthScale(ball.y);
+    const r = this.W * 0.011 * scale;
+    const lift = (ball.height || 0) * this.H;
+    const shrink = 1 - Math.min(0.55, (ball.height || 0) * 4);
+
+    ctx.beginPath(); ctx.ellipse(gx, gy, r * 1.15 * shrink, r * 0.5 * shrink, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,0,0,${(0.28 * shrink).toFixed(2)})`; ctx.fill();
+
+    const bx = gx, by = gy - lift;
+    ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
     ctx.fillStyle = "#ffffff"; ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "#333"; ctx.stroke();
-    ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, Math.PI * 2); ctx.fillStyle = "#333"; ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, r * 0.4, 0, Math.PI * 2); ctx.fillStyle = "#333"; ctx.fill();
   }
 
   drawGoalBurst(ball) {
@@ -1447,10 +1555,11 @@ class Pitch {
     if (this.stopped) return;
     const slotsA = this.layout(this.match.a, 0);
     const slotsB = this.layout(this.match.b, 1);
-    this.drawField();
+    this.fillBackground();
+    this.drawFieldLines();
     this.drawTeam(slotsB, 1, 0, this.ball);
     this.drawTeam(slotsA, 0, 0, this.ball);
-    this.drawBall(this.ball, 0);
+    this.drawBall(this.ball);
   }
 }
 
@@ -1756,11 +1865,12 @@ function startLoop() {
   loopStep(gen);
 }
 
-// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールほど長くゆっくり見せる
-const TICK_DURATION = { 0: 550, 1: 2300, 2: 2600 };
-const TICK_HOLD = { 0: 0, 1: 300, 2: 1300 };
-const TICK_DUR_MIN = { 0: 120, 1: 500, 2: 500 };
-const TICK_HOLD_MIN = { 0: 0, 1: 100, 2: 150 };
+// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールはビルドアップ→カメラズーム→
+// シュート直前で一瞬静止→結果、という「間」を作るぶん長めに確保する
+const TICK_DURATION = { 0: 500, 1: 2600, 2: 3200 };
+const TICK_HOLD = { 0: 0, 1: 350, 2: 1400 };
+const TICK_DUR_MIN = { 0: 110, 1: 550, 2: 650 };
+const TICK_HOLD_MIN = { 0: 0, 1: 120, 2: 180 };
 
 async function loopStep(gen) {
   if (gen !== app.loopGen) return;
@@ -1788,7 +1898,7 @@ async function loopStep(gen) {
       revealTimer = null;
       if (gen !== app.loopGen) return;
       for (const ev of delayed) addLog(ev);
-    }, dur * 0.72);
+    }, dur * 0.75); // ピッチ側の「静止からの解放」タイミング(build+freeze=75%)に合わせる
   }
 
   await app.pitch.animateTick(m.tickAnim, dur);
