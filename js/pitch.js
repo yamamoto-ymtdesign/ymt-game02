@@ -32,6 +32,16 @@ function textColor(hex) {
   const [r, g, b] = hexToRgb(hex);
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#111" : "#fff";
 }
+
+// 選手の肌の色合い（名前から決定的に選ぶ＝毎回同じ選手は同じ色。
+// 国籍で一括に決めず、個々の選手に多様な色合いを持たせる）
+const SKIN_TONES = ["#ffdbb0", "#f0b989", "#c98a5c", "#9c6136", "#6b4023", "#3f2718"];
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function skinTone(name) { return SKIN_TONES[hashStr(name) % SKIN_TONES.length]; }
 function resolveKits(keyA, keyB) {
   const A = TEAM_KIT[keyA] || DEFAULT_KIT, B = TEAM_KIT[keyB] || DEFAULT_KIT;
   let cA = A.primary, cB = B.primary;
@@ -51,8 +61,7 @@ class Pitch {
     this.kits = resolveKits(match.a.strategy.teamKey, match.b.strategy.teamKey);
     this.ball = { x: 0.5, y: 0.5 };
     this.stopped = false;
-    // 選手ごとの微揺れ位相（見た目を生かす）
-    this.phase = Array.from({ length: 44 }, (_, i) => i * 1.7);
+    this.level = 0;
     this.resize();
     this._onResize = () => { this.resize(); this.drawStatic(); };
     window.addEventListener("resize", this._onResize);
@@ -121,7 +130,8 @@ class Pitch {
     return { x: gx, y: wide };
   }
 
-  // アニメの区切り（ボールの経由点列）を作る
+  // アニメの区切り（ボールの経由点列）を作る。平穏なティックは短く、
+  // 決定機・ゴールのティックはビルドアップ〜シュートをしっかり見せる
   buildPoints(anim, slotsA, slotsB) {
     const pts = [{ x: this.ball.x, y: this.ball.y, w: 0.6 }];
     this.shot = null;
@@ -131,20 +141,22 @@ class Pitch {
       const mids = atk.filter((s) => s.pos === "MF");
       const backs = atk.filter((s) => s.pos === "DF");
       const pool = (mids.length ? mids : atk).concat(backs);
-      // ビルドアップ：2人経由
-      for (let k = 0; k < 2; k++) {
+      const featured = e.phase !== "possession";
+      // ビルドアップ：決定機は2人経由、平穏なティックは1人だけの短いパス回し
+      const buildupCount = featured ? 2 : 1;
+      for (let k = 0; k < buildupCount; k++) {
         const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
         pts.push({ x: s.base.x, y: s.base.y, w: 1 });
       }
       if (["goal", "save", "miss", "post"].includes(e.phase)) {
         const shooter = (e.shooter && this.findSlot(atk, e.shooter))
           || atk.filter((s) => s.pos === "FW")[0] || atk[atk.length - 1];
-        pts.push({ x: shooter.base.x, y: shooter.base.y, w: 1 });
+        pts.push({ x: shooter.base.x, y: shooter.base.y, w: 1.3 });
         const gk = def.find((s) => s.pos === "GK");
         const tgt = this.shotTarget(e.side, e.phase, gk);
-        pts.push({ x: tgt.x, y: tgt.y, w: 0.55, shot: true });
+        pts.push({ x: tgt.x, y: tgt.y, w: 0.7, shot: true });
         this.shot = { defSide: 1 - e.side, phase: e.phase, targetY: tgt.y, gk };
-      } else {
+      } else if (!featured) {
         const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
         pts.push({ x: s.base.x, y: s.base.y, w: 1 });
       }
@@ -175,6 +187,7 @@ class Pitch {
   animateTick(anim, duration) {
     return new Promise((resolve) => {
       if (this.stopped || !anim) return resolve();
+      this.level = anim.level || 0;
       const slotsA = this.layout(this.match.a, 0);
       const slotsB = this.layout(this.match.b, 1);
       const pts = this.buildPoints(anim, slotsA, slotsB);
@@ -183,7 +196,7 @@ class Pitch {
         if (this.stopped) return resolve();
         const p = Math.min(1, (now - start) / duration);
         const ball = this.ballAt(pts, p);
-        this.drawFrame(p, anim, slotsA, slotsB, ball, now / 1000);
+        this.drawFrame(p, anim, slotsA, slotsB, ball);
         if (p >= 1) {
           this.ball = anim.goal ? { x: 0.5, y: 0.5 } : { x: ball.x, y: ball.y };
           return resolve();
@@ -194,12 +207,14 @@ class Pitch {
     });
   }
 
-  drawFrame(p, anim, slotsA, slotsB, ball, time) {
+  drawFrame(p, anim, slotsA, slotsB, ball) {
     this.drawField();
     const atkSide = anim.seq[0] ? anim.seq[0].side : 0;
-    const shift = Math.sin(Math.PI * p) * 0.05;   // 攻撃側は前へ、守備側は後ろへ
-    this.drawTeam(slotsB, 1, atkSide === 1 ? shift : -shift * 0.6, ball, time);
-    this.drawTeam(slotsA, 0, atkSide === 0 ? shift : -shift * 0.6, ball, time);
+    // 決定機・ゴールの場面ははっきり攻め上がる。平穏なティックはほぼ陣形を保つ
+    const amp = this.level >= 1 ? 0.065 : 0.01;
+    const shift = Math.sin(Math.PI * p) * amp;
+    this.drawTeam(slotsB, 1, atkSide === 1 ? shift : -shift * 0.6, ball);
+    this.drawTeam(slotsA, 0, atkSide === 0 ? shift : -shift * 0.6, ball);
     this.drawBall(ball, p);
     if (anim.goal && p > 0.8) this.drawGoalBurst(ball);
   }
@@ -237,22 +252,23 @@ class Pitch {
     }
   }
 
-  drawTeam(slots, side, shiftX, ball, time) {
+  drawTeam(slots, side, shiftX, ball) {
     const ctx = this.ctx, kit = this.kits[side];
     const dir = side === 0 ? 1 : -1;
     for (const s of slots) {
-      const idle = 0.004 * Math.sin(time * 1.6 + this.phase[(side * 22 + s.num) % 44]);
-      let nx = s.base.x + shiftX * dir + idle;
-      let ny = s.base.y + idle * 0.7;
+      // 平穏な場面では陣形をほぼ動かさない。決定機・ゴールの場面だけ
+      // ボールに向かって選手が実際に反応して動く
+      let nx = s.base.x + shiftX * dir;
+      let ny = s.base.y;
       if (s.pos === "GK") {
         // GKはゴール前で左右に。シュート時は反応する
-        ny = lerp(s.base.y, this.gkTargetY(side, ball), 0.5);
+        ny = lerp(s.base.y, this.gkTargetY(side, ball), this.level >= 1 ? 0.6 : 0.15);
         nx = s.base.x;
-      } else {
-        // ボールへ少し寄る（守備側は強め）
+      } else if (this.level >= 1) {
+        // ボールへ寄る（シュートを受ける守備側はより強く反応）
         const dx = ball.x - nx, dy = ball.y - ny;
         const dist = Math.hypot(dx, dy) + 0.001;
-        const pull = Math.min(0.05, 0.02 / (dist + 0.15)) * (this.shot && this.shot.defSide === side ? 1.4 : 1);
+        const pull = Math.min(0.06, 0.024 / (dist + 0.15)) * (this.shot && this.shot.defSide === side ? 1.5 : 1);
         nx += (dx / dist) * pull * 0.6;
         ny += (dy / dist) * pull;
       }
@@ -271,21 +287,36 @@ class Pitch {
     return lerp(0.5, ball.y, 0.4);
   }
 
+  // 上から見た人型（頭＋胴体）で選手を描く。頭の色は選手ごとに固定の肌色
   drawPlayer(nx, ny, kit, s) {
     const ctx = this.ctx, [x, y] = this.px(nx, ny);
-    const r = this.W * 0.016;
-    ctx.beginPath(); ctx.ellipse(x, y + r * 0.9, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
+    const r = this.W * 0.017;
+    const bodyCY = y + r * 0.4, bodyRx = r * 0.82, bodyRy = r * 1.05;
+    const headR = r * 0.62, headCY = bodyCY - bodyRy - headR * 0.45;
+
+    // 影
+    ctx.beginPath(); ctx.ellipse(x, y + r * 1.5, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fill();
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+
+    // 胴体（ユニフォームカラー）
+    ctx.beginPath(); ctx.ellipse(x, bodyCY, bodyRx, bodyRy, 0, 0, Math.PI * 2);
     ctx.fillStyle = kit.fill; ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.stroke();
-    if (s.fatigue >= 70) { // 疲労した選手は赤リング
-      ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
+
+    // 頭（選手ごとに固定の肌の色合い）
+    ctx.beginPath(); ctx.arc(x, headCY, headR, 0, Math.PI * 2);
+    ctx.fillStyle = skinTone(s.name); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
+
+    if (s.fatigue >= 70) { // 疲労した選手は全身を赤リングで囲む
+      ctx.beginPath();
+      ctx.ellipse(x, y - r * 0.05, bodyRx + 3, bodyRy + headR * 1.15, 0, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,90,90,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
     }
-    ctx.fillStyle = kit.text; ctx.font = `bold ${Math.round(r * 1.1)}px sans-serif`;
+
+    ctx.fillStyle = kit.text; ctx.font = `bold ${Math.round(r * 1.0)}px sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(String(s.num), x, y);
+    ctx.fillText(String(s.num), x, bodyCY + r * 0.05);
   }
 
   drawBall(ball, p) {
@@ -319,8 +350,8 @@ class Pitch {
     const slotsA = this.layout(this.match.a, 0);
     const slotsB = this.layout(this.match.b, 1);
     this.drawField();
-    this.drawTeam(slotsB, 1, 0, this.ball, 0);
-    this.drawTeam(slotsA, 0, 0, this.ball, 0);
+    this.drawTeam(slotsB, 1, 0, this.ball);
+    this.drawTeam(slotsA, 0, 0, this.ball);
     this.drawBall(this.ball, 0);
   }
 }

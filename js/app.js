@@ -298,16 +298,45 @@ function startLoop() {
   loopStep(gen);
 }
 
+// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールほど長くゆっくり見せる
+const TICK_DURATION = { 0: 550, 1: 2300, 2: 2600 };
+const TICK_HOLD = { 0: 0, 1: 300, 2: 1300 };
+const TICK_DUR_MIN = { 0: 120, 1: 500, 2: 500 };
+const TICK_HOLD_MIN = { 0: 0, 1: 100, 2: 150 };
+
 async function loopStep(gen) {
   if (gen !== app.loopGen) return;
   const m = app.match;
   if (m.finished || m.atHalftime) return;
   const before = m.events.length;
   m.step();
-  for (let i = before; i < m.events.length; i++) addLog(m.events[i]);
+  const newEvents = m.events.slice(before);
   updateScoreboard();
-  const dur = Math.max(150, 1400 / app.speed);
+
+  const level = m.tickAnim.level || 0;
+  const dur = Math.max(TICK_DUR_MIN[level], TICK_DURATION[level] / app.speed);
+  const hold = Math.max(TICK_HOLD_MIN[level], TICK_HOLD[level] / app.speed);
+
+  // 決定機・ゴールの結果テキストは、シュートが弾ける瞬間まで表示を遅らせる
+  // （実況の文字が一気に流れず、映像と一緒に読める速さにする）
+  const delayed = [];
+  for (const ev of newEvents) {
+    if (level >= 1 && (ev.kind === "goal" || ev.kind === "chance")) delayed.push(ev);
+    else addLog(ev);
+  }
+  let revealTimer = null;
+  if (delayed.length) {
+    revealTimer = setTimeout(() => {
+      revealTimer = null;
+      if (gen !== app.loopGen) return;
+      for (const ev of delayed) addLog(ev);
+    }, dur * 0.72);
+  }
+
   await app.pitch.animateTick(m.tickAnim, dur);
+  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; if (gen === app.loopGen) for (const ev of delayed) addLog(ev); }
+  if (hold) await new Promise((r) => setTimeout(r, hold));
+
   if (gen !== app.loopGen) return;
   if (m.atHalftime) { showHalftime(); return; }
   if (m.finished) { showResult(); return; }

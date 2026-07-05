@@ -256,7 +256,10 @@ class Match {
       }
     }
     // アニメーション用: このティックで何が起きたか
-    this.tickAnim = { seq, goal: seq.some((e) => e.phase === "goal") };
+    // level 0=平穏(ボール回しのみ) 1=決定機(枠外/ポスト/セーブ) 2=ゴール
+    const hasGoal = seq.some((e) => e.phase === "goal");
+    const hasChance = seq.some((e) => ["save", "post", "miss"].includes(e.phase));
+    this.tickAnim = { seq, goal: hasGoal, level: hasGoal ? 2 : hasChance ? 1 : 0 };
 
     // 疲労蓄積
     for (const ts of this.teams()) {
