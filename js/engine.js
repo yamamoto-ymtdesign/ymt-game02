@@ -103,6 +103,8 @@ class Match {
     this.finished = false;
     this.atHalftime = false;
     this.events = [];
+    this.goals = [];      // {side, minute, label, name} 得点の記録（スコア表示用）
+    this.tickLog = [];    // ハイライト再生用: ティックごとの記録
   }
 
   teams() { return [this.a, this.b]; }
@@ -203,6 +205,10 @@ class Match {
   step() {
     if (this.finished || this.atHalftime) return;
     const min = this.minute();
+    const tickLabel = this.minuteLabel();
+    const eventsBefore = this.events.length;
+    const scoreBefore = [...this.score];
+    const goalsBefore = this.goals.length;
 
     for (const ts of this.teams()) {
       const before = this.activeTactics(ts).applied.length;
@@ -239,10 +245,11 @@ class Match {
     if (this.rng() < cp) {
       const r = this.resolveChance(atkSide, defSide, av, dv, at, dt);
       goal = r.goal;
-      seq.push({ side: this.idx(atkSide), phase: r.outcome, shooter: r.shooter, assister: r.assister });
+      seq.push({ side: this.idx(atkSide), phase: r.outcome, shooter: r.shooter,
+        assister: r.assister, gk: r.gk, style: at.attack, counter: false });
     } else {
       if (this.rng() < 0.18) this.flavor(atkSide, defSide, at);
-      seq.push({ side: this.idx(atkSide), phase: "possession" });
+      seq.push({ side: this.idx(atkSide), phase: "possession", style: at.attack });
     }
 
     // 2b. 速攻判定: カウンター/ロングボールのチームは、相手の攻撃を凌いだ流れから
@@ -252,7 +259,8 @@ class Match {
       if (this.rng() < cp2) {
         const r2 = this.resolveChance(defSide, atkSide, dv, av, dt, at);
         if (r2.goal) goal = true;
-        seq.push({ side: this.idx(defSide), phase: r2.outcome, shooter: r2.shooter, assister: r2.assister });
+        seq.push({ side: this.idx(defSide), phase: r2.outcome, shooter: r2.shooter,
+          assister: r2.assister, gk: r2.gk, style: dt.attack, counter: true });
       }
     }
     // アニメーション用: このティックで何が起きたか
@@ -276,6 +284,17 @@ class Match {
         p.fatigue = Math.min(100, p.fatigue + Math.max(0.3, f));
       }
     }
+
+    // ハイライト再生用の記録（結果を先出ししないよう、そのティック時点のスコアを持つ）
+    this.tickLog.push({
+      half: this.half, minute: min, label: tickLabel,
+      anim: this.tickAnim,
+      events: this.events.slice(eventsBefore),
+      scoreBefore, scoreAfter: [...this.score],
+      goalsBefore, goalsAfter: this.goals.length,
+      xiA: this.a.onPitch().map((p) => p.name),
+      xiB: this.b.onPitch().map((p) => p.name),
+    });
 
     this.tick++;
     if (this.half === 1 && this.tick >= this.fhTicks) {
@@ -313,7 +332,7 @@ class Match {
     return Math.max(0.05, Math.min(0.45, cp));
   }
 
-  // 決定機を解決する。{goal, outcome, shooter, assister} を返す
+  // 決定機を解決する。{goal, outcome, shooter, assister, gk} を返す
   resolveChance(atk, def, av, dv, at, dt) {
     atk.stats.chances++;
     atk.stats.shots++;
@@ -349,9 +368,10 @@ class Match {
       if (gk) gk.rating -= 0.3;
       const dfs = def.onPitch("DF");
       if (dfs.length) this.weightedPick(dfs, () => 1).rating -= 0.3;
+      this.goals.push({ side: this.idx(atk), minute: this.minute(), label: this.minuteLabel(), name: shooter.name });
       this.log(`${buildup}`, "play");
       this.log(`⚽ ゴーーール！！ ${atk.team.name}、${shooter.name}が決めた！ ${this.scoreStr()}`, "goal");
-      return { goal: true, outcome: "goal", shooter: shooter.name, assister: assister.name };
+      return { goal: true, outcome: "goal", shooter: shooter.name, assister: assister.name, gk: gk ? gk.name : "" };
     }
     const r = this.rng();
     let endText, outcome;
@@ -359,7 +379,7 @@ class Match {
     else if (r < 0.6) { endText = `シュートは無情にもポスト直撃！`; outcome = "post"; }
     else { endText = `シュート！ …わずかに枠の外！`; outcome = "miss"; }
     this.log(`${atk.team.name}、決定機！ ${buildup} ${endText}`, "chance");
-    return { goal: false, outcome, shooter: shooter.name, assister: assister.name };
+    return { goal: false, outcome, shooter: shooter.name, assister: assister.name, gk: gk ? gk.name : "" };
   }
 
   flavor(atk, def, at) {

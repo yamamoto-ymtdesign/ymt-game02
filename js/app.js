@@ -70,14 +70,34 @@ function setupPanel(st, i) {
   const team = TEAMS_DATA[st.teamKey];
   panel.appendChild(el("p", "desc", `「${team.desc}」`));
 
-  const fRow = el("div", "row");
-  fRow.appendChild(el("label", null, "フォーメーション: "));
-  const fSel = el("select");
-  for (const f of Object.keys(FORMATIONS)) fSel.appendChild(new Option(f, f));
-  fSel.value = st.formation;
-  fSel.addEventListener("change", () => { st.formation = fSel.value; st.picked = new Set(); renderSetup(); });
-  fRow.appendChild(fSel);
-  panel.appendChild(fRow);
+  // 戦術を先に決める（スタメンは戦術に合わせて自動選択できる）
+  panel.appendChild(el("h3", "tactics-h", "① 戦術を決める"));
+  const tacticsWrap = el("div", "tactics-grid");
+  const addSel = (label, options, current, onChange) => {
+    const row = el("label", "tsel");
+    row.appendChild(el("span", null, label));
+    const sel = el("select");
+    for (const o of options) sel.appendChild(new Option(o, o));
+    sel.value = current;
+    sel.addEventListener("change", () => onChange(sel.value));
+    row.appendChild(sel);
+    tacticsWrap.appendChild(row);
+  };
+  addSel("フォーメーション", Object.keys(FORMATIONS), st.formation,
+    (v) => { st.formation = v; st.picked = new Set(); renderSetup(); });
+  addSel("攻撃", ATTACK_STYLES, st.tactics.attack, (v) => { st.tactics.attack = v; });
+  addSel("守備", DEFENSE_STYLES, st.tactics.defense, (v) => { st.tactics.defense = v; });
+  addSel("ライン", LINES, st.tactics.line, (v) => { st.tactics.line = v; });
+  addSel("テンポ", TEMPOS, st.tactics.tempo, (v) => { st.tactics.tempo = v; });
+  addSel("切り札", TRUMPS, st.trump, (v) => { st.trump = v; });
+  panel.appendChild(tacticsWrap);
+
+  panel.appendChild(el("h3", "tactics-h", "② スタメンを決める"));
+  const autoBtn = el("button", null, "⚙ 戦術に合わせてスタメンを自動選択");
+  autoBtn.addEventListener("click", () => { autoPickStarters(st); renderSetup(); });
+  panel.appendChild(autoBtn);
+  panel.appendChild(el("p", "hint",
+    "自動選択は戦術との相性で選手を採点します（例: ポゼッションならパスの得意なMFを優先）。行をクリックして手動で調整もできます"));
 
   const need = { GK: 1, ...FORMATIONS[st.formation] };
   const count = { GK: 0, DF: 0, MF: 0, FW: 0 };
@@ -119,26 +139,6 @@ function setupPanel(st, i) {
   scroll.appendChild(table);
   panel.appendChild(scroll);
 
-  // 戦術選択（クイックプレイ用。ダウンロードした.mdでも同じ項目を編集できる）
-  panel.appendChild(el("h3", "tactics-h", "戦術"));
-  const tacticsWrap = el("div", "tactics-grid");
-  const addSel = (label, options, current, onChange) => {
-    const row = el("label", "tsel");
-    row.appendChild(el("span", null, label));
-    const sel = el("select");
-    for (const o of options) sel.appendChild(new Option(o, o));
-    sel.value = current;
-    sel.addEventListener("change", () => onChange(sel.value));
-    row.appendChild(sel);
-    tacticsWrap.appendChild(row);
-  };
-  addSel("攻撃", ATTACK_STYLES, st.tactics.attack, (v) => { st.tactics.attack = v; });
-  addSel("守備", DEFENSE_STYLES, st.tactics.defense, (v) => { st.tactics.defense = v; });
-  addSel("ライン", LINES, st.tactics.line, (v) => { st.tactics.line = v; });
-  addSel("テンポ", TEMPOS, st.tactics.tempo, (v) => { st.tactics.tempo = v; });
-  addSel("切り札", TRUMPS, st.trump, (v) => { st.trump = v; });
-  panel.appendChild(tacticsWrap);
-
   const dlBtn = el("button", null, "戦略ファイルをダウンロード（.md編集で詳細設定）");
   dlBtn.id = `dl-${i}`;
   dlBtn.addEventListener("click", () => downloadStrategy(st));
@@ -155,6 +155,41 @@ function flash(elm, msg) {
   elm.textContent = msg;
   elm.classList.add("warn");
   setTimeout(() => { elm.textContent = old; elm.classList.remove("warn"); }, 1500);
+}
+
+// 戦術に合わせてスタメンを自動選択する。
+// ポジションごとの基本の採点に、選んだ戦術による重み補正を加えて上位から選ぶ
+// （能力indexは S と同じ: 0スピード 1パス 2ドリブル 3シュート 4守備 5空中戦 6スタミナ 7メンタル）
+function autoPickStarters(st) {
+  const team = TEAMS_DATA[st.teamKey];
+  const need = { GK: 1, ...FORMATIONS[st.formation] };
+  const t = st.tactics;
+  const w = {
+    GK: { 4: 1.0, 7: 0.3 },
+    DF: { 4: 1.0, 5: 0.5, 0: 0.3, 1: 0.2 },
+    MF: { 1: 0.8, 2: 0.5, 4: 0.4, 6: 0.3, 3: 0.2 },
+    FW: { 3: 1.0, 2: 0.5, 0: 0.4, 5: 0.3 },
+  };
+  const add = (pos, i, v) => { w[pos][i] = (w[pos][i] || 0) + v; };
+  if (t.attack === "ポゼッション") { add("MF", 1, 1.0); add("MF", 2, 0.4); add("DF", 1, 0.6); add("FW", 2, 0.5); }
+  if (t.attack === "カウンター") { add("FW", 0, 1.0); add("FW", 3, 0.3); add("MF", 0, 0.6); add("MF", 1, 0.3); }
+  if (t.attack === "サイドアタック") { add("FW", 5, 1.0); add("MF", 0, 0.5); add("MF", 1, 0.5); add("DF", 0, 0.4); }
+  if (t.attack === "ロングボール") { add("FW", 5, 1.2); add("DF", 1, 0.6); add("MF", 5, 0.4); }
+  if (t.defense === "ハイプレス") { for (const p of ["DF", "MF", "FW"]) add(p, 6, 0.5); add("FW", 4, 0.3); add("MF", 4, 0.3); }
+  if (t.defense === "リトリート") { add("DF", 4, 0.5); add("MF", 4, 0.3); }
+  if (t.defense === "マンマーク") { add("DF", 0, 0.5); add("MF", 6, 0.3); }
+  if (t.defense === "ゾーン") { add("DF", 5, 0.4); }
+  if (t.line === "高い") add("DF", 0, 0.6);
+  if (t.tempo === "速い") { for (const p of ["DF", "MF", "FW"]) add(p, 6, 0.3); }
+
+  st.picked = new Set();
+  for (const pos of POS_ORDER) {
+    team.players.filter((p) => p.pos === pos)
+      .map((p) => ({ p, s: Object.entries(w[pos]).reduce((a, [i, v]) => a + p.stats[i] * v, 0) }))
+      .sort((x, y) => y.s - x.s)
+      .slice(0, need[pos])
+      .forEach(({ p }) => st.picked.add(p.name));
+  }
 }
 
 function setupComplete(st) {
@@ -220,7 +255,10 @@ function downloadStrategy(st) {
   const team = TEAMS_DATA[st.teamKey];
   const starters = { GK: [], DF: [], MF: [], FW: [] };
   for (const p of team.players) if (st.picked.has(p.name)) starters[p.pos].push(p.name);
-  const md = buildStrategyMd({ manager: st.manager, teamKey: st.teamKey, formation: st.formation, starters });
+  const md = buildStrategyMd({
+    manager: st.manager, teamKey: st.teamKey, formation: st.formation, starters,
+    tactics: { ...st.tactics }, trump: st.trump,
+  });
   const fname = `${st.manager.replace(/[\\/:*?"<>|\s]/g, "_")}_${timestampStr(new Date())}.md`;
   downloadText(fname, md);
 }
@@ -265,7 +303,15 @@ function initLoadScreen() {
   $("#start-match").addEventListener("click", startMatch);
 }
 
-// ---- 試合画面 ----
+// ---- 試合画面（ハイライト方式） ----
+// 試合はまずシステム内で半分ずつ丸ごとシミュレートし、チャンス・ゴールにつながった
+// シーンだけをハイライトとして順に再生する。スコアはハイライトの進行に合わせて
+// 更新される（先の結果をネタバレしない）
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HL_DURATION = { 1: 4200, 2: 5200 };  // 決定機/ゴールの基準再生時間(ms, ×1)
+const HL_MIN = { 1: 900, 2: 1100 };
+const TEXT_DELAY = 700;
 
 function startMatch() {
   const seedInput = $("#seed-input").value.trim();
@@ -273,6 +319,7 @@ function startMatch() {
   if (app.pitch) app.pitch.stop();
   app.match = new Match(app.strategies[0], app.strategies[1], seed);
   app.htDone = [false, false];
+  app.tickLogIdx = 0;
   showScreen("#screen-match");
   $("#log").innerHTML = "";
   $("#ht-panel").classList.add("hidden");
@@ -288,66 +335,107 @@ function startMatch() {
     }
   }
   if (notes.length) addLog({ kind: "info", minute: "", text: `本日のコンディション速報 — ${notes.join(" ／ ")}` });
-  updateScoreboard();
-  startLoop();
-}
+  setScoreboard([0, 0], "前半");
 
-// アニメーションと同期したティックループ。app.loopGen で多重起動・中断を管理する
-function startLoop() {
   const gen = ++app.loopGen;
-  loopStep(gen);
+  (async () => {
+    const ok = await playHalf(gen);
+    if (!ok) return;
+    addLog({ kind: "section", minute: "", text: `🕐 前半終了 ${m.scoreStr()}` });
+    setScoreboard(m.score, "ハーフタイム");
+    showHalftime();
+  })();
 }
 
-// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールはビルドアップ→カメラズーム→
-// シュート直前で一瞬静止→結果、という「間」を作るぶん長めに確保する
-const TICK_DURATION = { 0: 500, 1: 2600, 2: 3200 };
-const TICK_HOLD = { 0: 0, 1: 350, 2: 1400 };
-const TICK_DUR_MIN = { 0: 110, 1: 550, 2: 650 };
-const TICK_HOLD_MIN = { 0: 0, 1: 120, 2: 180 };
-
-async function loopStep(gen) {
-  if (gen !== app.loopGen) return;
+// 半分をシミュレートして、ハイライトの再生リストを作り、順に再生する
+async function playHalf(gen) {
   const m = app.match;
-  if (m.finished || m.atHalftime) return;
-  const before = m.events.length;
-  m.step();
-  const newEvents = m.events.slice(before);
-  updateScoreboard();
+  const startIdx = app.tickLogIdx;
+  while (!m.atHalftime && !m.finished) m.step();
+  const entries = m.tickLog.slice(startIdx);
+  app.tickLogIdx = m.tickLog.length;
 
-  const level = m.tickAnim.level || 0;
-  const dur = Math.max(TICK_DUR_MIN[level], TICK_DURATION[level] / app.speed);
-  const hold = Math.max(TICK_HOLD_MIN[level], TICK_HOLD[level] / app.speed);
-
-  // 決定機・ゴールの結果テキストは、シュートが弾ける瞬間まで表示を遅らせる
-  // （実況の文字が一気に流れず、映像と一緒に読める速さにする）
-  const delayed = [];
-  for (const ev of newEvents) {
-    if (level >= 1 && (ev.kind === "goal" || ev.kind === "chance")) delayed.push(ev);
-    else addLog(ev);
-  }
-  let revealTimer = null;
-  if (delayed.length) {
-    revealTimer = setTimeout(() => {
-      revealTimer = null;
-      if (gen !== app.loopGen) return;
-      for (const ev of delayed) addLog(ev);
-    }, dur * 0.75); // ピッチ側の「静止からの解放」タイミング(build+freeze=75%)に合わせる
+  const items = [];
+  for (const en of entries) {
+    for (const ev of en.events) {
+      if (ev.kind === "info" || ev.kind === "trump") items.push({ type: "text", ev });
+    }
+    if ((en.anim.level || 0) >= 1) {
+      for (const e of en.anim.seq) {
+        if (e.phase !== "possession") items.push({ type: "hl", en, e });
+      }
+    }
   }
 
-  await app.pitch.animateTick(m.tickAnim, dur);
-  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; if (gen === app.loopGen) for (const ev of delayed) addLog(ev); }
-  if (hold) await new Promise((r) => setTimeout(r, hold));
+  const halfName = entries[0].half === 1 ? "前半" : "後半";
+  addLog({ kind: "info", minute: "", text: `📺 ${halfName}ハイライト` });
+  if (!items.some((i) => i.type === "hl")) {
+    addLog({ kind: "play", minute: "", text: `${halfName}は両者に決定機のない、こう着した展開が続いた` });
+    await sleep(Math.max(300, 1200 / app.speed));
+  }
 
-  if (gen !== app.loopGen) return;
-  if (m.atHalftime) { showHalftime(); return; }
-  if (m.finished) { showResult(); return; }
-  loopStep(gen);
+  for (const item of items) {
+    if (gen !== app.loopGen) return false;
+    if (item.type === "text") {
+      addLog(item.ev);
+      setScoreboard(null, item.ev.minute || null);
+      await sleep(Math.max(150, TEXT_DELAY / app.speed));
+    } else {
+      await playHighlightItem(gen, item.en, item.e);
+    }
+  }
+  return gen === app.loopGen;
 }
 
-function updateScoreboard() {
+// 1つのハイライトを再生する：実況（起点〜シュートまで）→ アニメーション
+// （ズームイン→静止）→ 静止が明ける瞬間に結果の実況とスコア更新
+async function playHighlightItem(gen, en, e) {
   const m = app.match;
-  $("#sb-teams").textContent = `${m.a.team.name} ${m.score[0]} - ${m.score[1]} ${m.b.team.name}`;
-  $("#sb-minute").textContent = m.finished ? "試合終了" : m.atHalftime ? "ハーフタイム" : m.minuteLabel();
+  const texts = highlightTexts(m, en, e);
+  setScoreboard(en.scoreBefore, en.label);
+  app.pitch.setOverlay(en.scoreBefore, m.goals.slice(0, en.goalsBefore));
+  addLog({ kind: "chance", minute: en.label, text: texts.build });
+
+  const lv = e.phase === "goal" ? 2 : 1;
+  const dur = Math.max(HL_MIN[lv], HL_DURATION[lv] / app.speed);
+  await app.pitch.playHighlight(en, e, dur, () => {
+    if (gen !== app.loopGen) return;
+    addLog({ kind: e.phase === "goal" ? "goal" : "chance", minute: en.label, text: texts.result });
+    if (e.phase === "goal") {
+      app.pitch.setOverlay(en.scoreAfter, m.goals.slice(0, en.goalsAfter));
+      setScoreboard(en.scoreAfter, en.label);
+    }
+  });
+  if (gen !== app.loopGen) return;
+  const hold = e.phase === "goal" ? Math.max(250, 1300 / app.speed) : Math.max(150, 450 / app.speed);
+  app.pitch.drawStatic();
+  await sleep(hold);
+}
+
+// ハイライトの実況文（「前半34分、日本の攻撃。◯◯の切り込みからのクロスに◯◯が頭で合わせる！」）
+function highlightTexts(m, en, e) {
+  const atk = e.side === 0 ? m.a : m.b;
+  const A = e.assister || "", S = e.shooter || "", GKn = e.gk || "";
+  const prefix = `${en.label.replace(" ", "")}、${atk.team.name}の攻撃${e.counter ? "（カウンター）" : ""}。`;
+  const build = {
+    "ポゼッション": `パスをつないで崩しにかかる。${A}のスルーパスに${S}が抜け出した！`,
+    "カウンター": `奪って一気に縦へ！ ${A}のパスから${S}が独走！`,
+    "サイドアタック": `${A}の切り込みからのクロスに${S}が飛び込む！`,
+    "ロングボール": `${A}のロングフィードに${S}が競り勝った！`,
+  }[e.style] || `${A}のパスから${S}がシュート体勢に入る！`;
+  const result = {
+    goal: `⚽ ゴーーール！！ ${S}のシュートがネットに突き刺さる！ ${m.a.team.name} ${en.scoreAfter[0]} - ${en.scoreAfter[1]} ${m.b.team.name}`,
+    save: `シュート！ …しかしGK${GKn}が値千金のビッグセーブ！`,
+    post: `シュート！ …これは惜しくもゴールポストを叩く！！`,
+    miss: `シュート！ …しかしわずかに枠の外！`,
+  }[e.phase];
+  return { build: prefix + build, result };
+}
+
+function setScoreboard(score, minuteText) {
+  const m = app.match;
+  if (score) $("#sb-teams").textContent = `${m.a.team.name} ${score[0]} - ${score[1]} ${m.b.team.name}`;
+  if (minuteText) $("#sb-minute").textContent = minuteText;
 }
 
 function addLog(ev) {
@@ -483,10 +571,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#start-2nd").addEventListener("click", () => {
     $("#ht-panel").classList.add("hidden");
-    app.match.startSecondHalf();
-    const evs = app.match.events;
+    const m = app.match;
+    m.startSecondHalf();
+    const evs = m.events;
     addLog(evs[evs.length - 1]);
-    startLoop();
+    setScoreboard(m.score, "後半");
+    const gen = ++app.loopGen;
+    (async () => {
+      const ok = await playHalf(gen);
+      if (!ok) return;
+      addLog({ kind: "section", minute: "", text: `🏁 試合終了 ${m.scoreStr()}` });
+      setScoreboard(m.score, "試合終了");
+      app.pitch.setOverlay(m.score, m.goals);
+      app.pitch.drawStatic();
+      showResult();
+    })();
   });
   document.querySelectorAll("[data-speed]").forEach((btn) => {
     btn.addEventListener("click", () => {

@@ -60,13 +60,13 @@ function buildStrategyMd(sel) {
 <!-- 選択肢: 4-4-2 / 4-3-3 / 3-5-2 / 4-2-3-1 / 5-3-2
      変更する場合はスターティングメンバーの人数構成も合わせること -->
 
-${checkboxGroup("攻撃スタイル", ATTACK_STYLES, "ポゼッション")}
+${checkboxGroup("攻撃スタイル", ATTACK_STYLES, sel.tactics?.attack || "ポゼッション")}
 
-${checkboxGroup("守備スタイル", DEFENSE_STYLES, "ゾーン")}
+${checkboxGroup("守備スタイル", DEFENSE_STYLES, sel.tactics?.defense || "ゾーン")}
 
-${checkboxGroup("ライン設定", LINES, "普通")}
+${checkboxGroup("ライン設定", LINES, sel.tactics?.line || "普通")}
 
-${checkboxGroup("テンポ", TEMPOS, "普通")}
+${checkboxGroup("テンポ", TEMPOS, sel.tactics?.tempo || "普通")}
 
 ## スターティングメンバー
 
@@ -91,7 +91,7 @@ FW: ${starters.FW.join(", ")}
 
 ## 切り札
 
-${checkboxGroup("種類", TRUMPS, "スーパーサブ")}
+${checkboxGroup("種類", TRUMPS, sel.trump || "スーパーサブ")}
 
 発動条件: IF 後半 AND ビハインド
 指名選手: ${benchFw ? benchFw.name : ""}

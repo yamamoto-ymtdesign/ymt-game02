@@ -158,11 +158,12 @@ td.lo { color: #ef9a9a; }
 
 <!-- 1. セットアップ画面 -->
 <section id="screen-setup" class="screen active">
-  <h2 class="step">STEP 1 ─ 両監督のチーム・スタメン・戦術を決める</h2>
+  <h2 class="step">STEP 1 ─ 両監督のチーム・戦術・スタメンを決める</h2>
   <p class="hint">
-    監督名を入力し、使用チームとフォーメーションを選び、ロスターの一覧表をクリックして
-    スターティングメンバー11人を決めてください。戦術を選んだら、そのまま
-    <strong>「この設定で試合開始」</strong>で観戦できます（動作チェックに便利）。
+    監督名を入力し、使用チームを選んだら、<strong>先に戦術（フォーメーション・攻撃・守備など）を決めて</strong>、
+    「⚙ 戦術に合わせてスタメンを自動選択」を押してください。戦術との相性で選手が自動採点されます
+    （手動でロスターの行をクリックして調整もできます）。そのまま
+    <strong>「この設定で試合開始」</strong>で観戦へ。
     じっくり作り込みたい場合は戦略ファイル（.md）をダウンロードして編集し、STEP 2 で読み込ませます。
   </p>
   <div id="setup-panels" class="columns"></div>
@@ -311,13 +312,13 @@ function buildStrategyMd(sel) {
 <!-- 選択肢: 4-4-2 / 4-3-3 / 3-5-2 / 4-2-3-1 / 5-3-2
      変更する場合はスターティングメンバーの人数構成も合わせること -->
 
-${checkboxGroup("攻撃スタイル", ATTACK_STYLES, "ポゼッション")}
+${checkboxGroup("攻撃スタイル", ATTACK_STYLES, sel.tactics?.attack || "ポゼッション")}
 
-${checkboxGroup("守備スタイル", DEFENSE_STYLES, "ゾーン")}
+${checkboxGroup("守備スタイル", DEFENSE_STYLES, sel.tactics?.defense || "ゾーン")}
 
-${checkboxGroup("ライン設定", LINES, "普通")}
+${checkboxGroup("ライン設定", LINES, sel.tactics?.line || "普通")}
 
-${checkboxGroup("テンポ", TEMPOS, "普通")}
+${checkboxGroup("テンポ", TEMPOS, sel.tactics?.tempo || "普通")}
 
 ## スターティングメンバー
 
@@ -342,7 +343,7 @@ FW: ${starters.FW.join(", ")}
 
 ## 切り札
 
-${checkboxGroup("種類", TRUMPS, "スーパーサブ")}
+${checkboxGroup("種類", TRUMPS, sel.trump || "スーパーサブ")}
 
 発動条件: IF 後半 AND ビハインド
 指名選手: ${benchFw ? benchFw.name : ""}
@@ -730,6 +731,8 @@ class Match {
     this.finished = false;
     this.atHalftime = false;
     this.events = [];
+    this.goals = [];      // {side, minute, label, name} 得点の記録（スコア表示用）
+    this.tickLog = [];    // ハイライト再生用: ティックごとの記録
   }
 
   teams() { return [this.a, this.b]; }
@@ -830,6 +833,10 @@ class Match {
   step() {
     if (this.finished || this.atHalftime) return;
     const min = this.minute();
+    const tickLabel = this.minuteLabel();
+    const eventsBefore = this.events.length;
+    const scoreBefore = [...this.score];
+    const goalsBefore = this.goals.length;
 
     for (const ts of this.teams()) {
       const before = this.activeTactics(ts).applied.length;
@@ -866,10 +873,11 @@ class Match {
     if (this.rng() < cp) {
       const r = this.resolveChance(atkSide, defSide, av, dv, at, dt);
       goal = r.goal;
-      seq.push({ side: this.idx(atkSide), phase: r.outcome, shooter: r.shooter, assister: r.assister });
+      seq.push({ side: this.idx(atkSide), phase: r.outcome, shooter: r.shooter,
+        assister: r.assister, gk: r.gk, style: at.attack, counter: false });
     } else {
       if (this.rng() < 0.18) this.flavor(atkSide, defSide, at);
-      seq.push({ side: this.idx(atkSide), phase: "possession" });
+      seq.push({ side: this.idx(atkSide), phase: "possession", style: at.attack });
     }
 
     // 2b. 速攻判定: カウンター/ロングボールのチームは、相手の攻撃を凌いだ流れから
@@ -879,7 +887,8 @@ class Match {
       if (this.rng() < cp2) {
         const r2 = this.resolveChance(defSide, atkSide, dv, av, dt, at);
         if (r2.goal) goal = true;
-        seq.push({ side: this.idx(defSide), phase: r2.outcome, shooter: r2.shooter, assister: r2.assister });
+        seq.push({ side: this.idx(defSide), phase: r2.outcome, shooter: r2.shooter,
+          assister: r2.assister, gk: r2.gk, style: dt.attack, counter: true });
       }
     }
     // アニメーション用: このティックで何が起きたか
@@ -903,6 +912,17 @@ class Match {
         p.fatigue = Math.min(100, p.fatigue + Math.max(0.3, f));
       }
     }
+
+    // ハイライト再生用の記録（結果を先出ししないよう、そのティック時点のスコアを持つ）
+    this.tickLog.push({
+      half: this.half, minute: min, label: tickLabel,
+      anim: this.tickAnim,
+      events: this.events.slice(eventsBefore),
+      scoreBefore, scoreAfter: [...this.score],
+      goalsBefore, goalsAfter: this.goals.length,
+      xiA: this.a.onPitch().map((p) => p.name),
+      xiB: this.b.onPitch().map((p) => p.name),
+    });
 
     this.tick++;
     if (this.half === 1 && this.tick >= this.fhTicks) {
@@ -940,7 +960,7 @@ class Match {
     return Math.max(0.05, Math.min(0.45, cp));
   }
 
-  // 決定機を解決する。{goal, outcome, shooter, assister} を返す
+  // 決定機を解決する。{goal, outcome, shooter, assister, gk} を返す
   resolveChance(atk, def, av, dv, at, dt) {
     atk.stats.chances++;
     atk.stats.shots++;
@@ -976,9 +996,10 @@ class Match {
       if (gk) gk.rating -= 0.3;
       const dfs = def.onPitch("DF");
       if (dfs.length) this.weightedPick(dfs, () => 1).rating -= 0.3;
+      this.goals.push({ side: this.idx(atk), minute: this.minute(), label: this.minuteLabel(), name: shooter.name });
       this.log(`${buildup}`, "play");
       this.log(`⚽ ゴーーール！！ ${atk.team.name}、${shooter.name}が決めた！ ${this.scoreStr()}`, "goal");
-      return { goal: true, outcome: "goal", shooter: shooter.name, assister: assister.name };
+      return { goal: true, outcome: "goal", shooter: shooter.name, assister: assister.name, gk: gk ? gk.name : "" };
     }
     const r = this.rng();
     let endText, outcome;
@@ -986,7 +1007,7 @@ class Match {
     else if (r < 0.6) { endText = `シュートは無情にもポスト直撃！`; outcome = "post"; }
     else { endText = `シュート！ …わずかに枠の外！`; outcome = "miss"; }
     this.log(`${atk.team.name}、決定機！ ${buildup} ${endText}`, "chance");
-    return { goal: false, outcome, shooter: shooter.name, assister: assister.name };
+    return { goal: false, outcome, shooter: shooter.name, assister: assister.name, gk: gk ? gk.name : "" };
   }
 
   flavor(atk, def, at) {
@@ -1096,10 +1117,11 @@ class Match {
 
 </script>
 <script>
-// 2Dピッチ描画（斜め見下ろしの疑似3D）。試合の各ティック（2分）を、陣形を保った選手たちが
-// パスを回し攻め上がってシュートするアニメーションとして再生する。
-// 決定機・ゴールの場面ではカメラがぐっとズームし、シュートが弾ける直前に一瞬静止して
-// 「入るか…！？」の間を作ってから結果を見せる。
+// 2Dピッチ描画（斜め見下ろしの疑似3D）。試合はシステム内で先にシミュレートされ、
+// チャンス・ゴールにつながったシーンだけが「ハイライト」として精密に再生される。
+// ハイライトは攻撃スタイル別の演出（クロスは弧を描く、カウンターは縦に速い等）を持ち、
+// カメラはシューターとゴールが必ず両方映る範囲でズームする。
+// スコア（得点時間・得点者つき）は画面の中央下部に常時表示される。
 
 // チームのキット色（primary=ユニフォーム, alt=対戦相手と被ったとき用）
 const TEAM_KIT = {
@@ -1121,13 +1143,12 @@ const GOAL_HALF = 0.09;          // ゴール幅の半分
 const DEPTH = { GK: 0.05, DF: 0.24, MF: 0.48, FW: 0.70 }; // 自ゴールからの深さ
 
 // 疑似3D設定：横(幅)方向を圧縮＆シアーして、斜め上から見下ろしたような角度をつくる
-const TILT_SQUISH = 0.80;   // 幅方向の圧縮率（小さいほど寝た角度に見える）
-const TILT_SHEAR = 0.11;    // 幅方向の位置によるカメラの傾き（遠近の斜め感）
-const SCALE_FAR = 0.84;     // 奥側の縮小率
-const SCALE_NEAR = 1.14;    // 手前側の拡大率
+const TILT_SQUISH = 0.80;
+const TILT_SHEAR = 0.11;
+const SCALE_FAR = 0.84;
+const SCALE_NEAR = 1.14;
 
-// 決定機・ゴールのカメラズーム
-const ZOOM_MAX = 1.85;
+const ZOOM_MAX = 1.9;            // 決定機カメラの最大ズーム
 
 function hexToRgb(h) {
   const s = h.replace("#", "");
@@ -1149,29 +1170,56 @@ function resolveKits(keyA, keyB) {
   return [{ fill: cA, text: textColor(cA) }, { fill: cB, text: textColor(cB) }];
 }
 
-// 選手の肌の色合い（名前から決定的に選ぶ＝毎回同じ選手は同じ色。
-// 国籍で一括に決めず、個々の選手に多様な色合いを持たせる）
+// ---- 選手の見た目（肌・髪・顔） ----
+// 名前から決定的に生成する＝同じ選手はいつも同じ見た目で、識別の手がかりになる
+
 const SKIN_TONES = ["#ffdbb0", "#f0b989", "#c98a5c", "#9c6136", "#6b4023", "#3f2718"];
+// 髪色はチーム（国）ごとの傾向を持たせる
+const HAIR_POOLS = {
+  japan: ["#181414", "#241a12", "#181414", "#3a2a18", "#6e4a22"],
+  brazil: ["#181414", "#241a12", "#181414", "#3a2a18", "#100e0e"],
+  spain: ["#181414", "#2c2016", "#241a12", "#4a341e"],
+  italy: ["#181414", "#2c2016", "#241a12", "#4a341e"],
+  portugal: ["#181414", "#2c2016", "#241a12", "#4a341e"],
+  argentina: ["#181414", "#2c2016", "#3a2a18", "#6e4a22"],
+  france: ["#181414", "#241a12", "#2c2016", "#6e4a22", "#100e0e"],
+  england: ["#2c2016", "#4a341e", "#c9a04e", "#a4502a", "#181414"],
+  germany: ["#c9a04e", "#4a341e", "#8a6a30", "#181414", "#2c2016"],
+  netherlands: ["#c9a04e", "#8a6a30", "#4a341e", "#a4502a", "#2c2016"],
+};
 function hashStr(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return Math.abs(h);
 }
-function skinTone(name) { return SKIN_TONES[hashStr(name) % SKIN_TONES.length]; }
+function look(teamKey, name) {
+  const h = hashStr(name);
+  const pool = HAIR_POOLS[teamKey] || HAIR_POOLS.japan;
+  return {
+    skin: SKIN_TONES[h % SKIN_TONES.length],
+    hair: pool[(h >> 3) % pool.length],
+    style: (h >> 6) % 6,        // 0:短髪 1:坊主 2:前髪 3:長髪 4:カーリー 5:スキンヘッド
+    beard: (h >> 9) % 4 === 0,  // 4人に1人はヒゲ
+  };
+}
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 class Pitch {
   constructor(canvas, match) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.match = match;
-    this.kits = resolveKits(match.a.strategy.teamKey, match.b.strategy.teamKey);
+    this.teamKeys = [match.a.strategy.teamKey, match.b.strategy.teamKey];
+    this.kits = resolveKits(this.teamKeys[0], this.teamKeys[1]);
     this.ball = { x: 0.5, y: 0.5, height: 0 };
     this.stopped = false;
     this.level = 0;
     this.shot = null;
+    this.actors = [];
+    this.overlay = { score: [0, 0], goals: [] };
     this.resize();
     this._onResize = () => { this.resize(); this.drawStatic(); };
     window.addEventListener("resize", this._onResize);
@@ -1195,20 +1243,22 @@ class Pitch {
     this.W = w; this.H = h;
   }
 
-  // 正規化座標（M込み） → ピクセル。幅方向を圧縮・シアーして斜め見下ろし角度に変換する
+  // スコア表示（中央下部に常時表示）を更新する
+  setOverlay(score, goals) {
+    this.overlay = { score: [...score], goals: goals.slice() };
+  }
+
+  // 正規化座標 → ピクセル（斜め見下ろしの変換）
   px(nx, ny) {
     const cy = ny - 0.5;
     const y = 0.5 + cy * TILT_SQUISH;
     const x = nx + cy * TILT_SHEAR;
     return [x * this.W, y * this.H];
   }
-  // 奥(遠い)ほど小さく、手前(近い)ほど大きく見せる奥行きスケール
   depthScale(ny) {
-    const t = Math.max(0, Math.min(1, (ny - M) / (1 - 2 * M)));
+    const t = clamp((ny - M) / (1 - 2 * M), 0, 1);
     return SCALE_FAR + (SCALE_NEAR - SCALE_FAR) * t;
   }
-
-  // side=0は左ゴール守備・右攻撃、side=1はその逆
   depthX(side, depth) {
     const inner = 1 - 2 * M;
     return side === 0 ? M + depth * inner : (1 - M) - depth * inner;
@@ -1216,19 +1266,22 @@ class Pitch {
   latY(lat) { return M + lat * (1 - 2 * M); }
   attackGoalX(side) { return side === 0 ? 1 - M : M; }
 
-  // 出場中の選手を陣形スロットに割り当て {num,name,pos,base:{x,y},fatigue,cond}
-  layout(ts, side) {
-    const groups = { GK: ts.onPitch("GK"), DF: ts.onPitch("DF"), MF: ts.onPitch("MF"), FW: ts.onPitch("FW") };
+  // 出場中の選手を陣形スロットに割り当てる。names を渡すとそのメンバーで組む
+  // （ハイライトは過去のシーンなので、そのティック時点の出場者を使う）
+  layout(ts, side, names) {
+    const players = names
+      ? names.map((n) => ts.players.find((p) => p.name === n)).filter(Boolean)
+      : ts.onPitch();
+    const groups = { GK: [], DF: [], MF: [], FW: [] };
+    for (const p of players) groups[p.pos].push(p);
     const out = [];
     let num = 1;
     for (const pos of POS_ORDER) {
-      const players = groups[pos];
-      const n = players.length;
-      players.forEach((p, i) => {
-        const lat = (i + 1) / (n + 1);
+      const n = groups[pos].length;
+      groups[pos].forEach((p, i) => {
         out.push({
           num: num++, name: p.name, pos, player: p,
-          base: { x: this.depthX(side, DEPTH[pos]), y: this.latY(lat) },
+          base: { x: this.depthX(side, DEPTH[pos]), y: this.latY((i + 1) / (n + 1)) },
           fatigue: p.fatigue,
         });
       });
@@ -1238,54 +1291,118 @@ class Pitch {
 
   findSlot(slots, name) { return slots.find((s) => s.name === name); }
 
-  // シュートの着弾点
-  shotTarget(side, phase, defGK) {
+  shotTarget(side, phase, gkSlot) {
     const gx = this.attackGoalX(side);
-    if (phase === "save") return { x: lerp(gx, 0.5, 0.04), y: defGK ? defGK.base.y : 0.5 };
+    if (phase === "save") return { x: lerp(gx, 0.5, 0.04), y: gkSlot ? gkSlot.base.y : 0.5 };
     if (phase === "goal") {
       const gy = 0.5 + (this.match.rng() - 0.5) * 0.11;
       return { x: side === 0 ? 1 - M * 0.4 : M * 0.4, y: gy };
     }
-    // miss / post: 枠の外（横）か上
-    const wide = 0.5 + (this.match.rng() < 0.5 ? -1 : 1) * (GOAL_HALF + 0.03);
+    if (phase === "post") return { x: gx, y: 0.5 + (this.match.rng() < 0.5 ? -1 : 1) * GOAL_HALF };
+    const wide = 0.5 + (this.match.rng() < 0.5 ? -1 : 1) * (GOAL_HALF + 0.045);
     return { x: gx, y: wide };
   }
 
-  // アニメの区切り（ボールの経由点列）を作る。平穏なティックは短く、
-  // 決定機・ゴールのティックはビルドアップ〜シュートをしっかり見せる
-  buildPoints(anim, slotsA, slotsB) {
-    const pts = [{ x: this.ball.x, y: this.ball.y, w: 0.6 }];
-    this.shot = null;
-    for (const e of anim.seq) {
-      const atk = e.side === 0 ? slotsA : slotsB;
-      const def = e.side === 0 ? slotsB : slotsA;
-      const mids = atk.filter((s) => s.pos === "MF");
-      const backs = atk.filter((s) => s.pos === "DF");
-      const pool = (mids.length ? mids : atk).concat(backs);
-      const featured = e.phase !== "possession";
-      const buildupCount = featured ? 2 : 1;
-      for (let k = 0; k < buildupCount; k++) {
-        const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
-        pts.push({ x: s.base.x, y: s.base.y, w: 1 });
-      }
-      if (["goal", "save", "miss", "post"].includes(e.phase)) {
-        const shooter = (e.shooter && this.findSlot(atk, e.shooter))
-          || atk.filter((s) => s.pos === "FW")[0] || atk[atk.length - 1];
-        pts.push({ x: shooter.base.x, y: shooter.base.y, w: 1.3 });
-        const gk = def.find((s) => s.pos === "GK");
-        const tgt = this.shotTarget(e.side, e.phase, gk);
-        pts.push({ x: tgt.x, y: tgt.y, w: 0.7, shot: true });
-        this.shot = { defSide: 1 - e.side, phase: e.phase, targetY: tgt.y, gk };
-      } else if (!featured) {
-        const s = pool[Math.floor(this.match.rng() * pool.length)] || atk[0];
-        pts.push({ x: s.base.x, y: s.base.y, w: 1 });
-      }
+  // ---- ハイライトの組み立て ----
+  // 攻撃スタイルごとに、経由点（w=所要時間の重み, arc=弾道の高さ倍率）と
+  // 「移動する選手」(actors) を作る。クロスは大きく弧を描き、ショートパスは地を這う
+
+  buildHighlight(e, atkSlots, defSlots) {
+    const side = e.side;
+    const goalX = this.attackGoalX(side);
+    const dir = side === 0 ? 1 : -1;
+    const rng = () => this.match.rng();
+
+    const shooter = (e.shooter && this.findSlot(atkSlots, e.shooter))
+      || atkSlots.filter((s) => s.pos === "FW")[0] || atkSlots[atkSlots.length - 1];
+    const assister = (e.assister && this.findSlot(atkSlots, e.assister) !== shooter && this.findSlot(atkSlots, e.assister))
+      || atkSlots.filter((s) => s.pos === "MF")[0] || atkSlots[0];
+    const gk = defSlots.find((s) => s.pos === "GK");
+    const mids = atkSlots.filter((s) => s.pos === "MF" && s !== shooter && s !== assister);
+    const backs = atkSlots.filter((s) => s.pos === "DF");
+
+    // シューターの最終位置（ボックス内へ走り込む）
+    const shooterTo = { x: goalX - dir * (0.08 + rng() * 0.04), y: 0.5 + (rng() - 0.5) * 0.14 };
+    const pts = [];
+    const actors = [];
+    let startBall;
+
+    if (e.style === "サイドアタック") {
+      // ウイングへ展開→切り込み→クロスをファーへ→ヘディング
+      const wingY = assister.base.y >= 0.5 ? 1 - M - 0.05 : M + 0.05;
+      const wingPos = { x: goalX - dir * 0.15, y: wingY };
+      startBall = { x: this.depthX(side, 0.45), y: 0.5 };
+      pts.push({ ...startBall, w: 0 });
+      pts.push({ x: assister.base.x, y: assister.base.y, w: 0.8, arc: 0.4 });
+      pts.push({ ...wingPos, w: 1.1, arc: 0.1 });                       // ドリブルで切り込む
+      pts.push({ x: shooterTo.x, y: shooterTo.y, w: 1.0, arc: 2.4 });   // クロスが大きく弧を描く
+      actors.push({ slot: assister, to: wingPos, at: 0.55 });
+      actors.push({ slot: shooter, to: shooterTo, at: 0.75 });
+    } else if (e.style === "カウンター") {
+      // 自陣で奪って縦に一気に（少ない経由点＝速い）
+      const steal = { x: this.depthX(side, 0.2), y: 0.35 + rng() * 0.3 };
+      startBall = steal;
+      pts.push({ ...steal, w: 0 });
+      pts.push({ x: assister.base.x, y: assister.base.y, w: 0.55, arc: 0.15 });
+      pts.push({ x: shooterTo.x - dir * 0.06, y: shooterTo.y, w: 0.9, arc: 0.7 }); // 縦一本のスルーパス
+      pts.push({ x: shooterTo.x, y: shooterTo.y, w: 0.35, arc: 0 });               // 独走
+      actors.push({ slot: shooter, to: shooterTo, at: 0.8 });
+    } else if (e.style === "ロングボール") {
+      // 最終ラインからの一発ロングフィード（最も高い弧）
+      const feeder = backs[Math.floor(rng() * backs.length)] || assister;
+      startBall = { x: feeder.base.x, y: feeder.base.y };
+      pts.push({ ...startBall, w: 0 });
+      pts.push({ x: assister.base.x, y: assister.base.y, w: 0.6, arc: 0.3 });
+      pts.push({ x: shooterTo.x - dir * 0.04, y: shooterTo.y, w: 1.3, arc: 3.0 }); // 放り込み
+      pts.push({ x: shooterTo.x, y: shooterTo.y, w: 0.4, arc: 0.2 });              // 競り落とす
+      actors.push({ slot: shooter, to: shooterTo, at: 0.75 });
+    } else {
+      // ポゼッション：細かいショートパス（低い弾道）を重ねて崩す
+      const relay = mids.length ? mids[Math.floor(rng() * mids.length)] : assister;
+      startBall = { x: this.depthX(side, 0.4), y: 0.6 - rng() * 0.2 };
+      pts.push({ ...startBall, w: 0 });
+      pts.push({ x: relay.base.x, y: relay.base.y, w: 0.6, arc: 0.1 });
+      pts.push({ x: assister.base.x, y: assister.base.y, w: 0.6, arc: 0.1 });
+      pts.push({ x: lerp(assister.base.x, shooterTo.x, 0.45), y: lerp(assister.base.y, shooterTo.y, 0.4), w: 0.55, arc: 0.1 });
+      pts.push({ x: shooterTo.x, y: shooterTo.y, w: 0.8, arc: 0.5 });   // 最後のスルーパス
+      actors.push({ slot: shooter, to: shooterTo, at: 0.8 });
     }
-    return pts;
+
+    // シュート
+    const target = this.shotTarget(side, e.phase, gk);
+    pts.push({ x: target.x, y: target.y, w: 0.6, arc: e.phase === "miss" ? 1.0 : 0.35, shot: true });
+    this.shot = { defSide: 1 - side, phase: e.phase, targetY: target.y };
+
+    // カメラ：シューター・ゴールマウス・着弾点が必ず全部入るようにズーム量と中心を決める
+    const focus = [
+      shooterTo, target, { x: goalX, y: 0.5 - GOAL_HALF }, { x: goalX, y: 0.5 + GOAL_HALF },
+      { x: goalX - dir * 0.18, y: 0.5 },
+    ];
+    const camera = this.computeCamera(focus);
+
+    return { pts, actors, startBall, camera, side, phase: e.phase };
   }
 
-  // p(0..1、区間集合全体での進捗)からボールの位置と高さ(弧)を求める。
-  // 距離の長い区間ほど高く弧を描く＝クロス/ロングボールは弧、短いパスは地を這う
+  // フォーカス点群がすべて画面内に収まる最大ズームと中心（ピクセル座標）を求める
+  computeCamera(focusPts) {
+    const pxs = focusPts.map((p) => this.px(p.x, p.y));
+    const xs = pxs.map((p) => p[0]), ys = pxs.map((p) => p[1]);
+    const pad = this.W * 0.06;
+    const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad;
+    const y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+    const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+    const zoom = clamp(Math.min(this.W / bw, this.H / bh), 1.15, ZOOM_MAX);
+    // 変換 s = p + (q - p)*z で、可視領域の中心が bbox の中心になる p を解く
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const solve = (c, size) => (z) => (c - size / (2 * z)) / (1 - 1 / z);
+    let pivotX = zoom > 1.001 ? solve(cx, this.W)(zoom) : this.W / 2;
+    let pivotY = zoom > 1.001 ? solve(cy, this.H)(zoom) : this.H / 2;
+    // ピボットがキャンバス内にあれば可視領域もキャンバス内に収まる
+    pivotX = clamp(pivotX, 0, this.W);
+    pivotY = clamp(pivotY, 0, this.H);
+    return { zoom, pivot: [pivotX, pivotY] };
+  }
+
   ballAt(pts, p) {
     const total = pts.slice(1).reduce((a, s) => a + s.w, 0) || 1;
     let acc = 0;
@@ -1293,16 +1410,15 @@ class Pitch {
     for (let i = 1; i < pts.length; i++) {
       const seg = pts[i].w;
       if (target <= acc + seg || i === pts.length - 1) {
-        const local = Math.max(0, Math.min(1, seg ? (target - acc) / seg : 1));
+        const local = clamp(seg ? (target - acc) / seg : 1, 0, 1);
         const t = easeInOut(local);
         const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y;
         const dist = Math.hypot(dx, dy);
-        const arcMax = Math.min(0.1, dist * 0.4) * (pts[i].shot ? 0.5 : 1);
-        const height = arcMax * Math.sin(Math.PI * local);
+        const arcMax = Math.min(0.13, dist * 0.5) * (pts[i].arc ?? Math.min(1, dist * 3));
         return {
           x: lerp(pts[i - 1].x, pts[i].x, t),
           y: lerp(pts[i - 1].y, pts[i].y, t),
-          height,
+          height: arcMax * Math.sin(Math.PI * local),
           shot: pts[i].shot && local > 0.05,
         };
       }
@@ -1311,7 +1427,6 @@ class Pitch {
     return { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, height: 0 };
   }
 
-  // シュート区間に入ってから「弾ける直前」で止めるための p 値
   preShotP(pts) {
     const total = pts.slice(1).reduce((a, s) => a + s.w, 0) || 1;
     const shotW = pts[pts.length - 1].shot ? pts[pts.length - 1].w : 0;
@@ -1319,39 +1434,22 @@ class Pitch {
     return 1 - 0.16 * (shotW / total);
   }
 
-  animateTick(anim, duration) {
-    if (this.stopped || !anim) return Promise.resolve();
-    this.level = anim.level || 0;
-    const slotsA = this.layout(this.match.a, 0);
-    const slotsB = this.layout(this.match.b, 1);
-    const pts = this.buildPoints(anim, slotsA, slotsB);
-    if (this.level >= 1 && this.shot) return this.animateFeatured(anim, pts, duration, slotsA, slotsB);
-    return this.animateQuiet(anim, pts, duration, slotsA, slotsB);
-  }
+  // ハイライトを再生する。ビルドアップ(ズームイン)→シュート直前で静止→リビール。
+  // onReveal は静止が明けて結果が見える瞬間に呼ばれる（実況の結果テキスト用）
+  playHighlight(entry, e, duration, onReveal) {
+    if (this.stopped) return Promise.resolve();
+    this.level = e.phase === "goal" ? 2 : 1;
+    const atkSlots = this.layout(e.side === 0 ? this.match.a : this.match.b, e.side, e.side === 0 ? entry.xiA : entry.xiB);
+    const defSlots = this.layout(e.side === 0 ? this.match.b : this.match.a, 1 - e.side, e.side === 0 ? entry.xiB : entry.xiA);
+    const slotsA = e.side === 0 ? atkSlots : defSlots;
+    const slotsB = e.side === 0 ? defSlots : atkSlots;
+    const hl = this.buildHighlight(e, atkSlots, defSlots);
+    this.actors = hl.actors;
+    this.ball = { ...hl.startBall, height: 0 };
+    const preP = this.preShotP(hl.pts);
+    const BUILD = duration * 0.55, FREEZE = duration * 0.18, REVEAL = duration - BUILD - FREEZE;
+    let revealed = false;
 
-  // 平穏なティック：ふつうに短く再生するだけ（ズームなし）
-  animateQuiet(anim, pts, duration, slotsA, slotsB) {
-    return new Promise((resolve) => {
-      const start = performance.now();
-      const step = (now) => {
-        if (this.stopped) return resolve();
-        const p = Math.min(1, (now - start) / duration);
-        const ball = this.ballAt(pts, p);
-        this.renderScene(p, anim, slotsA, slotsB, ball, 1, null);
-        if (p >= 1) { this.ball = { x: ball.x, y: ball.y, height: 0 }; return resolve(); }
-        this._raf = requestAnimationFrame(step);
-      };
-      this._raf = requestAnimationFrame(step);
-    });
-  }
-
-  // 決定機・ゴールのティック：ビルドアップ(ズームイン)→シュート直前で一瞬静止→
-  // 素早く結果を見せてズームアウト、という「間」のある演出
-  animateFeatured(anim, pts, duration, slotsA, slotsB) {
-    const preP = this.preShotP(pts);
-    const shooterPt = pts[pts.length - 2], shotPt = pts[pts.length - 1];
-    const pivot = this.px(lerp(shooterPt.x, shotPt.x, 0.5), lerp(shooterPt.y, shotPt.y, 0.5));
-    const BUILD = duration * 0.58, FREEZE = duration * 0.17, REVEAL = duration - BUILD - FREEZE;
     return new Promise((resolve) => {
       const start = performance.now();
       const step = (now) => {
@@ -1361,42 +1459,47 @@ class Pitch {
         if (el < BUILD) {
           const b = easeInOut(Math.min(1, el / BUILD));
           p = preP * b;
-          zoom = 1 + (ZOOM_MAX - 1) * b;
+          zoom = 1 + (hl.camera.zoom - 1) * b;
         } else if (el < BUILD + FREEZE) {
           p = preP;
-          zoom = ZOOM_MAX;
+          zoom = hl.camera.zoom;
         } else {
+          if (!revealed) { revealed = true; if (onReveal) onReveal(); }
           const r = Math.min(1, (el - BUILD - FREEZE) / REVEAL);
           p = lerp(preP, 1, Math.min(1, r / 0.35));
-          zoom = r < 0.5 ? ZOOM_MAX : lerp(ZOOM_MAX, 1, (r - 0.5) / 0.5);
+          zoom = r < 0.55 ? hl.camera.zoom : lerp(hl.camera.zoom, 1, (r - 0.55) / 0.45);
         }
-        const ball = this.ballAt(pts, p);
-        this.renderScene(p, anim, slotsA, slotsB, ball, zoom, pivot);
-        if (el >= duration) { this.ball = { x: ball.x, y: ball.y, height: 0 }; return resolve(); }
+        const ball = this.ballAt(hl.pts, p);
+        this.renderScene(p, e.side, slotsA, slotsB, ball, zoom, hl.camera.pivot, e.phase === "goal" && p >= 1);
+        if (el >= duration) {
+          this.actors = [];
+          this.ball = { x: 0.5, y: 0.5, height: 0 };
+          return resolve();
+        }
         this._raf = requestAnimationFrame(step);
       };
       this._raf = requestAnimationFrame(step);
     });
   }
 
-  renderScene(p, anim, slotsA, slotsB, ball, zoom, pivotPx) {
+  renderScene(p, atkSide, slotsA, slotsB, ball, zoom, pivot, burst) {
     this.fillBackground();
     const ctx = this.ctx;
     ctx.save();
-    if (zoom && zoom !== 1 && pivotPx) {
-      ctx.translate(pivotPx[0], pivotPx[1]);
+    if (zoom && zoom !== 1 && pivot) {
+      ctx.translate(pivot[0], pivot[1]);
       ctx.scale(zoom, zoom);
-      ctx.translate(-pivotPx[0], -pivotPx[1]);
+      ctx.translate(-pivot[0], -pivot[1]);
     }
     this.drawFieldLines();
-    const atkSide = anim.seq[0] ? anim.seq[0].side : 0;
-    const amp = this.level >= 1 ? 0.065 : 0.01;
+    const amp = 0.05;
     const shift = Math.sin(Math.PI * p) * amp;
-    this.drawTeam(slotsB, 1, atkSide === 1 ? shift : -shift * 0.6, ball);
-    this.drawTeam(slotsA, 0, atkSide === 0 ? shift : -shift * 0.6, ball);
+    this.drawTeam(slotsB, 1, atkSide === 1 ? shift : -shift * 0.6, ball, p);
+    this.drawTeam(slotsA, 0, atkSide === 0 ? shift : -shift * 0.6, ball, p);
     this.drawBall(ball);
-    if (anim.goal && p > 0.8) this.drawGoalBurst(ball);
+    if (burst) this.drawGoalBurst(ball);
     ctx.restore();
+    this.drawOverlay();   // スコアはズームの影響を受けない
   }
 
   fillBackground() {
@@ -1409,27 +1512,18 @@ class Pitch {
     for (let i = 0; i < stripes; i += 2) ctx.fillRect((i / stripes) * W, 0, W / stripes, H);
   }
 
-  // ピッチのライン類。各点を px() で投影してから多角形として描くので、
-  // 見下ろし角度に応じて台形・斜めの楕円として正しく歪む
   drawFieldLines() {
     const ctx = this.ctx;
     ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1.5;
-
     const poly = (points) => {
       ctx.beginPath();
       points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
       ctx.closePath();
     };
-
-    // 外枠
     poly([[M, M], [1 - M, M], [1 - M, 1 - M], [M, 1 - M]].map(([x, y]) => this.px(x, y)));
     ctx.stroke();
-
-    // ハーフウェイライン
     const [hx1, hy1] = this.px(0.5, M), [hx2, hy2] = this.px(0.5, 1 - M);
     ctx.beginPath(); ctx.moveTo(hx1, hy1); ctx.lineTo(hx2, hy2); ctx.stroke();
-
-    // センターサークル（円周をサンプリングして投影→斜めの楕円になる）
     const circlePts = [];
     for (let i = 0; i <= 24; i++) {
       const a = (i / 24) * Math.PI * 2;
@@ -1438,8 +1532,6 @@ class Pitch {
     poly(circlePts); ctx.stroke();
     const [ccx, ccy] = this.px(0.5, 0.5);
     ctx.beginPath(); ctx.arc(ccx, ccy, 2.5, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fill();
-
-    // ペナルティエリア＆ゴール
     for (const side of [0, 1]) {
       const boxDepth = 0.16, boxHalf = 0.22;
       const nearX = side === 0 ? M : 1 - M;
@@ -1449,7 +1541,6 @@ class Pitch {
         [nearX + dir * boxDepth, 0.5 + boxHalf], [nearX, 0.5 + boxHalf],
       ].map(([x, y]) => this.px(x, y)));
       ctx.stroke();
-
       poly([
         [nearX, 0.5 - GOAL_HALF], [nearX - dir * 0.02, 0.5 - GOAL_HALF],
         [nearX - dir * 0.02, 0.5 + GOAL_HALF], [nearX, 0.5 + GOAL_HALF],
@@ -1458,23 +1549,37 @@ class Pitch {
     }
   }
 
-  drawTeam(slots, side, shiftX, ball) {
+  // ハイライト中に走り込む選手（actors）の現在位置
+  actorPos(slot, p) {
+    const a = this.actors.find((x) => x.slot === slot);
+    if (!a) return null;
+    const t = easeInOut(clamp(p / a.at, 0, 1));
+    return { x: lerp(slot.base.x, a.to.x, t), y: lerp(slot.base.y, a.to.y, t) };
+  }
+
+  drawTeam(slots, side, shiftX, ball, progress) {
     const kit = this.kits[side];
     const dir = side === 0 ? 1 : -1;
     for (const s of slots) {
-      let nx = s.base.x + shiftX * dir;
-      let ny = s.base.y;
-      if (s.pos === "GK") {
-        ny = lerp(s.base.y, this.gkTargetY(side, ball), this.level >= 1 ? 0.6 : 0.15);
-        nx = s.base.x;
-      } else if (this.level >= 1) {
-        const dx = ball.x - nx, dy = ball.y - ny;
-        const dist = Math.hypot(dx, dy) + 0.001;
-        const pull = Math.min(0.06, 0.024 / (dist + 0.15)) * (this.shot && this.shot.defSide === side ? 1.5 : 1);
-        nx += (dx / dist) * pull * 0.6;
-        ny += (dy / dist) * pull;
+      const moved = this.actorPos(s, progress ?? 1);
+      let nx, ny;
+      if (moved) {
+        nx = moved.x; ny = moved.y;
+      } else {
+        nx = s.base.x + shiftX * dir;
+        ny = s.base.y;
+        if (s.pos === "GK") {
+          ny = lerp(s.base.y, this.gkTargetY(side, ball), this.level >= 1 ? 0.6 : 0.15);
+          nx = s.base.x;
+        } else if (this.level >= 1) {
+          const dx = ball.x - nx, dy = ball.y - ny;
+          const dist = Math.hypot(dx, dy) + 0.001;
+          const pull = Math.min(0.06, 0.024 / (dist + 0.15)) * (this.shot && this.shot.defSide === side ? 1.5 : 1);
+          nx += (dx / dist) * pull * 0.6;
+          ny += (dy / dist) * pull;
+        }
       }
-      this.drawPlayer(nx, ny, kit, s);
+      this.drawPlayer(nx, ny, kit, s, this.teamKeys[side]);
     }
   }
 
@@ -1488,25 +1593,57 @@ class Pitch {
     return lerp(0.5, ball.y, 0.4);
   }
 
-  // 上から見た人型（頭＋胴体）で選手を描く。頭の色は選手ごとに固定の肌色。
-  // 奥行きスケールで手前は大きく・奥は小さく見せる
-  drawPlayer(nx, ny, kit, s) {
+  // 人型（頭＋髪＋顔＋胴体）。見た目は名前から決まるので同じ選手はいつも同じ姿
+  drawPlayer(nx, ny, kit, s, teamKey) {
     const ctx = this.ctx, [x, y] = this.px(nx, ny);
     const scale = this.depthScale(ny);
     const r = this.W * 0.017 * scale;
     const bodyCY = y + r * 0.4, bodyRx = r * 0.82, bodyRy = r * 1.05;
     const headR = r * 0.62, headCY = bodyCY - bodyRy - headR * 0.45;
+    const lk = look(teamKey, s.name);
 
+    // 影
     ctx.beginPath(); ctx.ellipse(x, y + r * 1.5, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fill();
 
+    // 胴体
     ctx.beginPath(); ctx.ellipse(x, bodyCY, bodyRx, bodyRy, 0, 0, Math.PI * 2);
     ctx.fillStyle = kit.fill; ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
 
+    // 頭（肌）
     ctx.beginPath(); ctx.arc(x, headCY, headR, 0, Math.PI * 2);
-    ctx.fillStyle = skinTone(s.name); ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
+    ctx.fillStyle = lk.skin; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.stroke();
+
+    // 髪型
+    ctx.fillStyle = lk.hair;
+    if (lk.style === 0) {         // 短髪：上半分のキャップ
+      ctx.beginPath(); ctx.arc(x, headCY, headR, Math.PI, 0); ctx.closePath(); ctx.fill();
+    } else if (lk.style === 1) {  // 坊主：薄い上部アーク
+      ctx.beginPath(); ctx.arc(x, headCY, headR, Math.PI * 1.15, -Math.PI * 0.15); ctx.closePath();
+      ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1;
+    } else if (lk.style === 2) {  // 前髪：キャップ＋額に段差
+      ctx.beginPath(); ctx.arc(x, headCY, headR, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.fillRect(x - headR * 0.85, headCY - headR * 0.15, headR * 1.7, headR * 0.32);
+    } else if (lk.style === 3) {  // 長髪：横まで覆う
+      ctx.beginPath(); ctx.arc(x, headCY, headR * 1.06, Math.PI * 0.85, Math.PI * 0.15); ctx.closePath(); ctx.fill();
+      ctx.fillRect(x - headR * 1.02, headCY - headR * 0.1, headR * 0.34, headR * 0.9);
+      ctx.fillRect(x + headR * 0.68, headCY - headR * 0.1, headR * 0.34, headR * 0.9);
+    } else if (lk.style === 4) {  // カーリー：上部に3つのこぶ
+      for (const off of [-0.55, 0, 0.55]) {
+        ctx.beginPath(); ctx.arc(x + headR * off, headCY - headR * 0.62, headR * 0.42, 0, Math.PI * 2); ctx.fill();
+      }
+    }                             // 5: スキンヘッド＝髪なし
+
+    // 顔（目・ヒゲ）
+    ctx.fillStyle = "rgba(20,16,12,0.85)";
+    ctx.beginPath(); ctx.arc(x - headR * 0.32, headCY + headR * 0.12, headR * 0.11, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + headR * 0.32, headCY + headR * 0.12, headR * 0.11, 0, Math.PI * 2); ctx.fill();
+    if (lk.beard) {
+      ctx.strokeStyle = lk.hair; ctx.lineWidth = headR * 0.22;
+      ctx.beginPath(); ctx.arc(x, headCY + headR * 0.35, headR * 0.55, Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
+    }
 
     if (s.fatigue >= 70) {
       ctx.beginPath();
@@ -1519,18 +1656,14 @@ class Pitch {
     ctx.fillText(String(s.num), x, bodyCY + r * 0.05);
   }
 
-  // ボールは地面の影(実際の位置)と、高さ分だけ浮いた本体を分けて描く。
-  // 高さがあるほど影が小さく薄くなり、弧を描くクロス/ロングボールが表現される
   drawBall(ball) {
     const ctx = this.ctx, [gx, gy] = this.px(ball.x, ball.y);
     const scale = this.depthScale(ball.y);
     const r = this.W * 0.011 * scale;
     const lift = (ball.height || 0) * this.H;
     const shrink = 1 - Math.min(0.55, (ball.height || 0) * 4);
-
     ctx.beginPath(); ctx.ellipse(gx, gy, r * 1.15 * shrink, r * 0.5 * shrink, 0, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(0,0,0,${(0.28 * shrink).toFixed(2)})`; ctx.fill();
-
     const bx = gx, by = gy - lift;
     ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
     ctx.fillStyle = "#ffffff"; ctx.fill();
@@ -1550,16 +1683,51 @@ class Pitch {
     }
   }
 
-  // 静止フレーム（キックオフ前・ハーフタイム表示用）
+  // スコア＋得点者（時間つき）を中央下部に常時表示する
+  drawOverlay() {
+    const ctx = this.ctx, W = this.W, H = this.H;
+    const { score, goals } = this.overlay;
+    const nameA = this.match.a.team.name, nameB = this.match.b.team.name;
+    const scorersA = goals.filter((g) => g.side === 0).map((g) => `${g.minute}' ${g.name}`).join("　");
+    const scorersB = goals.filter((g) => g.side === 1).map((g) => `${g.minute}' ${g.name}`).join("　");
+    const hasScorers = scorersA || scorersB;
+    const barH = hasScorers ? 46 : 30;
+    const barW = Math.min(W * 0.86, 560);
+    const bx = (W - barW) / 2, by = H - barH - 8;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(bx, by, barW, barH, 8);
+    ctx.fillStyle = "rgba(8,16,10,0.72)";
+    ctx.fill();
+
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(`${nameA}  ${score[0]} - ${score[1]}  ${nameB}`, W / 2, by + 16);
+
+    if (hasScorers) {
+      ctx.font = "11px sans-serif";
+      ctx.fillStyle = "#ffd54f";
+      if (scorersA) { ctx.textAlign = "right"; ctx.fillText(`⚽ ${scorersA}`, W / 2 - 30, by + 34); }
+      if (scorersB) { ctx.textAlign = "left"; ctx.fillText(`⚽ ${scorersB}`, W / 2 + 30, by + 34); }
+    }
+    ctx.restore();
+  }
+
+  // 静止フレーム（キックオフ前・ハーフタイム・ハイライトの合間）
   drawStatic() {
     if (this.stopped) return;
+    this.level = 0;
+    this.actors = [];
     const slotsA = this.layout(this.match.a, 0);
     const slotsB = this.layout(this.match.b, 1);
     this.fillBackground();
     this.drawFieldLines();
-    this.drawTeam(slotsB, 1, 0, this.ball);
-    this.drawTeam(slotsA, 0, 0, this.ball);
+    this.drawTeam(slotsB, 1, 0, this.ball, 1);
+    this.drawTeam(slotsA, 0, 0, this.ball, 1);
     this.drawBall(this.ball);
+    this.drawOverlay();
   }
 }
 
@@ -1637,14 +1805,34 @@ function setupPanel(st, i) {
   const team = TEAMS_DATA[st.teamKey];
   panel.appendChild(el("p", "desc", `「${team.desc}」`));
 
-  const fRow = el("div", "row");
-  fRow.appendChild(el("label", null, "フォーメーション: "));
-  const fSel = el("select");
-  for (const f of Object.keys(FORMATIONS)) fSel.appendChild(new Option(f, f));
-  fSel.value = st.formation;
-  fSel.addEventListener("change", () => { st.formation = fSel.value; st.picked = new Set(); renderSetup(); });
-  fRow.appendChild(fSel);
-  panel.appendChild(fRow);
+  // 戦術を先に決める（スタメンは戦術に合わせて自動選択できる）
+  panel.appendChild(el("h3", "tactics-h", "① 戦術を決める"));
+  const tacticsWrap = el("div", "tactics-grid");
+  const addSel = (label, options, current, onChange) => {
+    const row = el("label", "tsel");
+    row.appendChild(el("span", null, label));
+    const sel = el("select");
+    for (const o of options) sel.appendChild(new Option(o, o));
+    sel.value = current;
+    sel.addEventListener("change", () => onChange(sel.value));
+    row.appendChild(sel);
+    tacticsWrap.appendChild(row);
+  };
+  addSel("フォーメーション", Object.keys(FORMATIONS), st.formation,
+    (v) => { st.formation = v; st.picked = new Set(); renderSetup(); });
+  addSel("攻撃", ATTACK_STYLES, st.tactics.attack, (v) => { st.tactics.attack = v; });
+  addSel("守備", DEFENSE_STYLES, st.tactics.defense, (v) => { st.tactics.defense = v; });
+  addSel("ライン", LINES, st.tactics.line, (v) => { st.tactics.line = v; });
+  addSel("テンポ", TEMPOS, st.tactics.tempo, (v) => { st.tactics.tempo = v; });
+  addSel("切り札", TRUMPS, st.trump, (v) => { st.trump = v; });
+  panel.appendChild(tacticsWrap);
+
+  panel.appendChild(el("h3", "tactics-h", "② スタメンを決める"));
+  const autoBtn = el("button", null, "⚙ 戦術に合わせてスタメンを自動選択");
+  autoBtn.addEventListener("click", () => { autoPickStarters(st); renderSetup(); });
+  panel.appendChild(autoBtn);
+  panel.appendChild(el("p", "hint",
+    "自動選択は戦術との相性で選手を採点します（例: ポゼッションならパスの得意なMFを優先）。行をクリックして手動で調整もできます"));
 
   const need = { GK: 1, ...FORMATIONS[st.formation] };
   const count = { GK: 0, DF: 0, MF: 0, FW: 0 };
@@ -1686,26 +1874,6 @@ function setupPanel(st, i) {
   scroll.appendChild(table);
   panel.appendChild(scroll);
 
-  // 戦術選択（クイックプレイ用。ダウンロードした.mdでも同じ項目を編集できる）
-  panel.appendChild(el("h3", "tactics-h", "戦術"));
-  const tacticsWrap = el("div", "tactics-grid");
-  const addSel = (label, options, current, onChange) => {
-    const row = el("label", "tsel");
-    row.appendChild(el("span", null, label));
-    const sel = el("select");
-    for (const o of options) sel.appendChild(new Option(o, o));
-    sel.value = current;
-    sel.addEventListener("change", () => onChange(sel.value));
-    row.appendChild(sel);
-    tacticsWrap.appendChild(row);
-  };
-  addSel("攻撃", ATTACK_STYLES, st.tactics.attack, (v) => { st.tactics.attack = v; });
-  addSel("守備", DEFENSE_STYLES, st.tactics.defense, (v) => { st.tactics.defense = v; });
-  addSel("ライン", LINES, st.tactics.line, (v) => { st.tactics.line = v; });
-  addSel("テンポ", TEMPOS, st.tactics.tempo, (v) => { st.tactics.tempo = v; });
-  addSel("切り札", TRUMPS, st.trump, (v) => { st.trump = v; });
-  panel.appendChild(tacticsWrap);
-
   const dlBtn = el("button", null, "戦略ファイルをダウンロード（.md編集で詳細設定）");
   dlBtn.id = `dl-${i}`;
   dlBtn.addEventListener("click", () => downloadStrategy(st));
@@ -1722,6 +1890,41 @@ function flash(elm, msg) {
   elm.textContent = msg;
   elm.classList.add("warn");
   setTimeout(() => { elm.textContent = old; elm.classList.remove("warn"); }, 1500);
+}
+
+// 戦術に合わせてスタメンを自動選択する。
+// ポジションごとの基本の採点に、選んだ戦術による重み補正を加えて上位から選ぶ
+// （能力indexは S と同じ: 0スピード 1パス 2ドリブル 3シュート 4守備 5空中戦 6スタミナ 7メンタル）
+function autoPickStarters(st) {
+  const team = TEAMS_DATA[st.teamKey];
+  const need = { GK: 1, ...FORMATIONS[st.formation] };
+  const t = st.tactics;
+  const w = {
+    GK: { 4: 1.0, 7: 0.3 },
+    DF: { 4: 1.0, 5: 0.5, 0: 0.3, 1: 0.2 },
+    MF: { 1: 0.8, 2: 0.5, 4: 0.4, 6: 0.3, 3: 0.2 },
+    FW: { 3: 1.0, 2: 0.5, 0: 0.4, 5: 0.3 },
+  };
+  const add = (pos, i, v) => { w[pos][i] = (w[pos][i] || 0) + v; };
+  if (t.attack === "ポゼッション") { add("MF", 1, 1.0); add("MF", 2, 0.4); add("DF", 1, 0.6); add("FW", 2, 0.5); }
+  if (t.attack === "カウンター") { add("FW", 0, 1.0); add("FW", 3, 0.3); add("MF", 0, 0.6); add("MF", 1, 0.3); }
+  if (t.attack === "サイドアタック") { add("FW", 5, 1.0); add("MF", 0, 0.5); add("MF", 1, 0.5); add("DF", 0, 0.4); }
+  if (t.attack === "ロングボール") { add("FW", 5, 1.2); add("DF", 1, 0.6); add("MF", 5, 0.4); }
+  if (t.defense === "ハイプレス") { for (const p of ["DF", "MF", "FW"]) add(p, 6, 0.5); add("FW", 4, 0.3); add("MF", 4, 0.3); }
+  if (t.defense === "リトリート") { add("DF", 4, 0.5); add("MF", 4, 0.3); }
+  if (t.defense === "マンマーク") { add("DF", 0, 0.5); add("MF", 6, 0.3); }
+  if (t.defense === "ゾーン") { add("DF", 5, 0.4); }
+  if (t.line === "高い") add("DF", 0, 0.6);
+  if (t.tempo === "速い") { for (const p of ["DF", "MF", "FW"]) add(p, 6, 0.3); }
+
+  st.picked = new Set();
+  for (const pos of POS_ORDER) {
+    team.players.filter((p) => p.pos === pos)
+      .map((p) => ({ p, s: Object.entries(w[pos]).reduce((a, [i, v]) => a + p.stats[i] * v, 0) }))
+      .sort((x, y) => y.s - x.s)
+      .slice(0, need[pos])
+      .forEach(({ p }) => st.picked.add(p.name));
+  }
 }
 
 function setupComplete(st) {
@@ -1787,7 +1990,10 @@ function downloadStrategy(st) {
   const team = TEAMS_DATA[st.teamKey];
   const starters = { GK: [], DF: [], MF: [], FW: [] };
   for (const p of team.players) if (st.picked.has(p.name)) starters[p.pos].push(p.name);
-  const md = buildStrategyMd({ manager: st.manager, teamKey: st.teamKey, formation: st.formation, starters });
+  const md = buildStrategyMd({
+    manager: st.manager, teamKey: st.teamKey, formation: st.formation, starters,
+    tactics: { ...st.tactics }, trump: st.trump,
+  });
   const fname = `${st.manager.replace(/[\\/:*?"<>|\s]/g, "_")}_${timestampStr(new Date())}.md`;
   downloadText(fname, md);
 }
@@ -1832,7 +2038,15 @@ function initLoadScreen() {
   $("#start-match").addEventListener("click", startMatch);
 }
 
-// ---- 試合画面 ----
+// ---- 試合画面（ハイライト方式） ----
+// 試合はまずシステム内で半分ずつ丸ごとシミュレートし、チャンス・ゴールにつながった
+// シーンだけをハイライトとして順に再生する。スコアはハイライトの進行に合わせて
+// 更新される（先の結果をネタバレしない）
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HL_DURATION = { 1: 4200, 2: 5200 };  // 決定機/ゴールの基準再生時間(ms, ×1)
+const HL_MIN = { 1: 900, 2: 1100 };
+const TEXT_DELAY = 700;
 
 function startMatch() {
   const seedInput = $("#seed-input").value.trim();
@@ -1840,6 +2054,7 @@ function startMatch() {
   if (app.pitch) app.pitch.stop();
   app.match = new Match(app.strategies[0], app.strategies[1], seed);
   app.htDone = [false, false];
+  app.tickLogIdx = 0;
   showScreen("#screen-match");
   $("#log").innerHTML = "";
   $("#ht-panel").classList.add("hidden");
@@ -1855,66 +2070,107 @@ function startMatch() {
     }
   }
   if (notes.length) addLog({ kind: "info", minute: "", text: `本日のコンディション速報 — ${notes.join(" ／ ")}` });
-  updateScoreboard();
-  startLoop();
-}
+  setScoreboard([0, 0], "前半");
 
-// アニメーションと同期したティックループ。app.loopGen で多重起動・中断を管理する
-function startLoop() {
   const gen = ++app.loopGen;
-  loopStep(gen);
+  (async () => {
+    const ok = await playHalf(gen);
+    if (!ok) return;
+    addLog({ kind: "section", minute: "", text: `🕐 前半終了 ${m.scoreStr()}` });
+    setScoreboard(m.score, "ハーフタイム");
+    showHalftime();
+  })();
 }
 
-// レベル別の基準時間(ms、速度×1のとき)。決定機・ゴールはビルドアップ→カメラズーム→
-// シュート直前で一瞬静止→結果、という「間」を作るぶん長めに確保する
-const TICK_DURATION = { 0: 500, 1: 2600, 2: 3200 };
-const TICK_HOLD = { 0: 0, 1: 350, 2: 1400 };
-const TICK_DUR_MIN = { 0: 110, 1: 550, 2: 650 };
-const TICK_HOLD_MIN = { 0: 0, 1: 120, 2: 180 };
-
-async function loopStep(gen) {
-  if (gen !== app.loopGen) return;
+// 半分をシミュレートして、ハイライトの再生リストを作り、順に再生する
+async function playHalf(gen) {
   const m = app.match;
-  if (m.finished || m.atHalftime) return;
-  const before = m.events.length;
-  m.step();
-  const newEvents = m.events.slice(before);
-  updateScoreboard();
+  const startIdx = app.tickLogIdx;
+  while (!m.atHalftime && !m.finished) m.step();
+  const entries = m.tickLog.slice(startIdx);
+  app.tickLogIdx = m.tickLog.length;
 
-  const level = m.tickAnim.level || 0;
-  const dur = Math.max(TICK_DUR_MIN[level], TICK_DURATION[level] / app.speed);
-  const hold = Math.max(TICK_HOLD_MIN[level], TICK_HOLD[level] / app.speed);
-
-  // 決定機・ゴールの結果テキストは、シュートが弾ける瞬間まで表示を遅らせる
-  // （実況の文字が一気に流れず、映像と一緒に読める速さにする）
-  const delayed = [];
-  for (const ev of newEvents) {
-    if (level >= 1 && (ev.kind === "goal" || ev.kind === "chance")) delayed.push(ev);
-    else addLog(ev);
-  }
-  let revealTimer = null;
-  if (delayed.length) {
-    revealTimer = setTimeout(() => {
-      revealTimer = null;
-      if (gen !== app.loopGen) return;
-      for (const ev of delayed) addLog(ev);
-    }, dur * 0.75); // ピッチ側の「静止からの解放」タイミング(build+freeze=75%)に合わせる
+  const items = [];
+  for (const en of entries) {
+    for (const ev of en.events) {
+      if (ev.kind === "info" || ev.kind === "trump") items.push({ type: "text", ev });
+    }
+    if ((en.anim.level || 0) >= 1) {
+      for (const e of en.anim.seq) {
+        if (e.phase !== "possession") items.push({ type: "hl", en, e });
+      }
+    }
   }
 
-  await app.pitch.animateTick(m.tickAnim, dur);
-  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; if (gen === app.loopGen) for (const ev of delayed) addLog(ev); }
-  if (hold) await new Promise((r) => setTimeout(r, hold));
+  const halfName = entries[0].half === 1 ? "前半" : "後半";
+  addLog({ kind: "info", minute: "", text: `📺 ${halfName}ハイライト` });
+  if (!items.some((i) => i.type === "hl")) {
+    addLog({ kind: "play", minute: "", text: `${halfName}は両者に決定機のない、こう着した展開が続いた` });
+    await sleep(Math.max(300, 1200 / app.speed));
+  }
 
-  if (gen !== app.loopGen) return;
-  if (m.atHalftime) { showHalftime(); return; }
-  if (m.finished) { showResult(); return; }
-  loopStep(gen);
+  for (const item of items) {
+    if (gen !== app.loopGen) return false;
+    if (item.type === "text") {
+      addLog(item.ev);
+      setScoreboard(null, item.ev.minute || null);
+      await sleep(Math.max(150, TEXT_DELAY / app.speed));
+    } else {
+      await playHighlightItem(gen, item.en, item.e);
+    }
+  }
+  return gen === app.loopGen;
 }
 
-function updateScoreboard() {
+// 1つのハイライトを再生する：実況（起点〜シュートまで）→ アニメーション
+// （ズームイン→静止）→ 静止が明ける瞬間に結果の実況とスコア更新
+async function playHighlightItem(gen, en, e) {
   const m = app.match;
-  $("#sb-teams").textContent = `${m.a.team.name} ${m.score[0]} - ${m.score[1]} ${m.b.team.name}`;
-  $("#sb-minute").textContent = m.finished ? "試合終了" : m.atHalftime ? "ハーフタイム" : m.minuteLabel();
+  const texts = highlightTexts(m, en, e);
+  setScoreboard(en.scoreBefore, en.label);
+  app.pitch.setOverlay(en.scoreBefore, m.goals.slice(0, en.goalsBefore));
+  addLog({ kind: "chance", minute: en.label, text: texts.build });
+
+  const lv = e.phase === "goal" ? 2 : 1;
+  const dur = Math.max(HL_MIN[lv], HL_DURATION[lv] / app.speed);
+  await app.pitch.playHighlight(en, e, dur, () => {
+    if (gen !== app.loopGen) return;
+    addLog({ kind: e.phase === "goal" ? "goal" : "chance", minute: en.label, text: texts.result });
+    if (e.phase === "goal") {
+      app.pitch.setOverlay(en.scoreAfter, m.goals.slice(0, en.goalsAfter));
+      setScoreboard(en.scoreAfter, en.label);
+    }
+  });
+  if (gen !== app.loopGen) return;
+  const hold = e.phase === "goal" ? Math.max(250, 1300 / app.speed) : Math.max(150, 450 / app.speed);
+  app.pitch.drawStatic();
+  await sleep(hold);
+}
+
+// ハイライトの実況文（「前半34分、日本の攻撃。◯◯の切り込みからのクロスに◯◯が頭で合わせる！」）
+function highlightTexts(m, en, e) {
+  const atk = e.side === 0 ? m.a : m.b;
+  const A = e.assister || "", S = e.shooter || "", GKn = e.gk || "";
+  const prefix = `${en.label.replace(" ", "")}、${atk.team.name}の攻撃${e.counter ? "（カウンター）" : ""}。`;
+  const build = {
+    "ポゼッション": `パスをつないで崩しにかかる。${A}のスルーパスに${S}が抜け出した！`,
+    "カウンター": `奪って一気に縦へ！ ${A}のパスから${S}が独走！`,
+    "サイドアタック": `${A}の切り込みからのクロスに${S}が飛び込む！`,
+    "ロングボール": `${A}のロングフィードに${S}が競り勝った！`,
+  }[e.style] || `${A}のパスから${S}がシュート体勢に入る！`;
+  const result = {
+    goal: `⚽ ゴーーール！！ ${S}のシュートがネットに突き刺さる！ ${m.a.team.name} ${en.scoreAfter[0]} - ${en.scoreAfter[1]} ${m.b.team.name}`,
+    save: `シュート！ …しかしGK${GKn}が値千金のビッグセーブ！`,
+    post: `シュート！ …これは惜しくもゴールポストを叩く！！`,
+    miss: `シュート！ …しかしわずかに枠の外！`,
+  }[e.phase];
+  return { build: prefix + build, result };
+}
+
+function setScoreboard(score, minuteText) {
+  const m = app.match;
+  if (score) $("#sb-teams").textContent = `${m.a.team.name} ${score[0]} - ${score[1]} ${m.b.team.name}`;
+  if (minuteText) $("#sb-minute").textContent = minuteText;
 }
 
 function addLog(ev) {
@@ -2050,10 +2306,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#start-2nd").addEventListener("click", () => {
     $("#ht-panel").classList.add("hidden");
-    app.match.startSecondHalf();
-    const evs = app.match.events;
+    const m = app.match;
+    m.startSecondHalf();
+    const evs = m.events;
     addLog(evs[evs.length - 1]);
-    startLoop();
+    setScoreboard(m.score, "後半");
+    const gen = ++app.loopGen;
+    (async () => {
+      const ok = await playHalf(gen);
+      if (!ok) return;
+      addLog({ kind: "section", minute: "", text: `🏁 試合終了 ${m.scoreStr()}` });
+      setScoreboard(m.score, "試合終了");
+      app.pitch.setOverlay(m.score, m.goals);
+      app.pitch.drawStatic();
+      showResult();
+    })();
   });
   document.querySelectorAll("[data-speed]").forEach((btn) => {
     btn.addEventListener("click", () => {
